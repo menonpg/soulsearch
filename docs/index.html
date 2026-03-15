@@ -1,0 +1,503 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SoulSearch — AI Browser Extension with Private Memory</title>
+  <meta name="description" content="AI research assistant for Chrome. Your memory, identity, and config live in your own private Git repo — not on Google's servers. Powered by soul.py. Open source." />
+  <meta property="og:title" content="SoulSearch — AI Browser Extension with Private Memory" />
+  <meta property="og:description" content="Your AI browser extension where memory lives in your private Git repo, not Google's servers. GitHub, GitLab, Gitea, self-hosted Raspberry Pi." />
+  <meta property="og:type" content="website" />
+  <meta property="og:url" content="https://menonpg.github.io/soulsearch/" />
+  <link rel="canonical" href="https://menonpg.github.io/soulsearch/" />
+  <style>
+    :root {
+      --bg: #08090f;
+      --bg2: #0f1019;
+      --bg3: #161722;
+      --border: #1e2030;
+      --primary: #6366f1;
+      --primary-light: #818cf8;
+      --accent: #a78bfa;
+      --text: #e8e9f0;
+      --muted: #6b7280;
+      --green: #22c55e;
+      --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', sans-serif;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+    body { background: var(--bg); color: var(--text); font-family: var(--font); line-height: 1.65; }
+    a { color: var(--primary-light); text-decoration: none; }
+    a:hover { color: white; }
+
+    /* ── NAV ── */
+    nav {
+      position: sticky; top: 0; z-index: 100;
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0 2rem; height: 56px;
+      background: rgba(8,9,15,0.85);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border);
+    }
+    .nav-logo { font-size: 17px; font-weight: 800; letter-spacing: -0.3px; }
+    .nav-logo .soul { color: var(--primary); }
+    .nav-logo .search { color: var(--text); }
+    .nav-links { display: flex; gap: 1.5rem; font-size: 13px; }
+    .nav-links a { color: var(--muted); }
+    .nav-links a:hover { color: var(--text); }
+    .nav-cta {
+      background: var(--primary); color: white; padding: 6px 16px;
+      border-radius: 6px; font-size: 13px; font-weight: 600;
+    }
+    .nav-cta:hover { background: #4f46e5; color: white; }
+
+    /* ── HERO ── */
+    .hero {
+      max-width: 860px; margin: 0 auto;
+      padding: 7rem 2rem 5rem;
+      text-align: center;
+    }
+    .hero-badge {
+      display: inline-flex; align-items: center; gap: 6px;
+      background: rgba(99,102,241,0.12); border: 1px solid rgba(99,102,241,0.25);
+      border-radius: 100px; padding: 4px 14px; font-size: 12px; font-weight: 600;
+      color: var(--primary-light); margin-bottom: 2rem; letter-spacing: 0.03em;
+    }
+    .hero h1 {
+      font-size: clamp(2.4rem, 6vw, 4rem);
+      font-weight: 900; line-height: 1.1;
+      letter-spacing: -0.03em; margin-bottom: 1.5rem;
+      background: linear-gradient(135deg, #fff 0%, var(--primary-light) 60%, var(--accent) 100%);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+    }
+    .hero p {
+      font-size: 1.15rem; color: var(--muted); max-width: 600px;
+      margin: 0 auto 2.5rem; line-height: 1.75;
+    }
+    .hero-actions { display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap; }
+    .btn {
+      display: inline-flex; align-items: center; gap: 8px;
+      padding: 11px 24px; border-radius: 8px;
+      font-size: 14px; font-weight: 600; transition: all 0.15s;
+    }
+    .btn-primary {
+      background: var(--primary); color: white;
+      box-shadow: 0 0 24px rgba(99,102,241,0.3);
+    }
+    .btn-primary:hover { background: #4f46e5; color: white; transform: translateY(-1px); }
+    .btn-outline {
+      background: transparent; color: var(--text);
+      border: 1px solid var(--border);
+    }
+    .btn-outline:hover { border-color: var(--primary); color: var(--primary-light); }
+
+    /* ── PRIVACY CALLOUT ── */
+    .privacy-callout {
+      max-width: 780px; margin: 0 auto 5rem;
+      background: linear-gradient(135deg, rgba(99,102,241,0.08) 0%, rgba(167,139,250,0.06) 100%);
+      border: 1px solid rgba(99,102,241,0.2);
+      border-radius: 16px; padding: 2.5rem;
+    }
+    .privacy-callout h2 { font-size: 1.4rem; margin-bottom: 0.75rem; font-weight: 700; }
+    .privacy-callout p { color: var(--muted); margin-bottom: 1.5rem; }
+    .privacy-model {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;
+    }
+    .privacy-box {
+      background: var(--bg3); border: 1px solid var(--border);
+      border-radius: 10px; padding: 1rem 1.25rem;
+    }
+    .privacy-box h4 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 0.6rem; }
+    .privacy-box.git h4 { color: var(--green); }
+    .privacy-box.local h4 { color: var(--primary-light); }
+    .privacy-box code {
+      display: block; font-family: 'SF Mono', 'Fira Code', monospace;
+      font-size: 11.5px; color: var(--muted); line-height: 1.9;
+    }
+    .privacy-box code .file { color: var(--text); }
+    .privacy-box code .comment { color: #404555; }
+    @media (max-width: 580px) { .privacy-model { grid-template-columns: 1fr; } }
+
+    /* ── EXTENSION MOCKUP ── */
+    .mockup-wrap {
+      max-width: 860px; margin: 0 auto 5rem; padding: 0 2rem;
+      display: flex; justify-content: center;
+    }
+    .extension-mockup {
+      width: 400px; background: #0d0d0d; border: 1px solid #2a2a2a;
+      border-radius: 12px; overflow: hidden;
+      box-shadow: 0 24px 80px rgba(0,0,0,0.6), 0 0 0 1px rgba(99,102,241,0.1);
+    }
+    .mock-header {
+      background: #161616; padding: 10px 14px 9px;
+      border-bottom: 1px solid #2a2a2a;
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .mock-logo { font-size: 14px; font-weight: 700; }
+    .mock-logo .s { color: var(--primary); }
+    .mock-status { display: flex; align-items: center; gap: 5px; font-size: 11px; color: #888; }
+    .mock-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); }
+    .mock-context {
+      background: #161616; padding: 5px 14px;
+      border-bottom: 1px solid #2a2a2a;
+      font-size: 11px; color: #555;
+    }
+    .mock-context span { color: var(--primary); font-weight: 600; }
+    .mock-chat { padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; }
+    .mock-msg {
+      padding: 8px 11px; border-radius: 8px; font-size: 12.5px; line-height: 1.5;
+    }
+    .mock-msg.sys { background: #1f1f1f; color: #666; font-style: italic; border: 1px solid #2a2a2a; }
+    .mock-msg.user { background: #4f46e5; color: white; align-self: flex-end; max-width: 85%; }
+    .mock-msg.ai { background: #161616; color: #e0e0e0; border: 1px solid #2a2a2a; }
+    .mock-memory {
+      padding: 5px 14px; background: #1a1a2e; border-top: 1px solid #2a2a4a;
+      font-size: 11px; color: #a78bfa;
+    }
+    .mock-input-area {
+      padding: 10px 14px 12px; border-top: 1px solid #2a2a2a; background: #161616;
+    }
+    .mock-input {
+      background: #1f1f1f; border: 1px solid #2a2a2a;
+      border-radius: 7px; padding: 7px 10px;
+      font-size: 12px; color: #888; width: 100%;
+    }
+    .mock-input-row { display: flex; justify-content: flex-end; gap: 5px; margin-top: 6px; }
+    .mock-icon-btn { background: #1f1f1f; border: 1px solid #2a2a2a; border-radius: 5px; padding: 4px 7px; font-size: 12px; }
+    .mock-send { background: var(--primary); color: white; border-radius: 5px; padding: 4px 10px; font-size: 11px; font-weight: 600; }
+
+    /* ── FEATURES ── */
+    .section { max-width: 860px; margin: 0 auto; padding: 0 2rem 5rem; }
+    .section-label {
+      font-size: 11px; text-transform: uppercase; letter-spacing: 0.1em;
+      color: var(--primary); font-weight: 700; margin-bottom: 0.75rem;
+    }
+    .section h2 { font-size: 1.9rem; font-weight: 800; margin-bottom: 1rem; }
+    .section > p { color: var(--muted); margin-bottom: 2.5rem; }
+    .features-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; }
+    @media (max-width: 680px) { .features-grid { grid-template-columns: 1fr; } }
+    .feature-card {
+      background: var(--bg2); border: 1px solid var(--border);
+      border-radius: 12px; padding: 1.25rem 1.5rem;
+      transition: border-color 0.2s;
+    }
+    .feature-card:hover { border-color: rgba(99,102,241,0.35); }
+    .feature-icon { font-size: 1.6rem; margin-bottom: 0.75rem; }
+    .feature-card h3 { font-size: 14px; font-weight: 700; margin-bottom: 0.4rem; }
+    .feature-card p { font-size: 12.5px; color: var(--muted); line-height: 1.6; }
+
+    /* ── GIT HOSTS ── */
+    .hosts-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; }
+    @media (max-width: 600px) { .hosts-grid { grid-template-columns: repeat(2, 1fr); } }
+    .host-card {
+      background: var(--bg2); border: 1px solid var(--border);
+      border-radius: 10px; padding: 1.25rem; text-align: center;
+    }
+    .host-icon { font-size: 1.8rem; margin-bottom: 0.5rem; }
+    .host-card h4 { font-size: 13px; font-weight: 700; margin-bottom: 0.25rem; }
+    .host-card p { font-size: 11.5px; color: var(--muted); }
+    .host-badge {
+      display: inline-block; margin-top: 0.5rem;
+      font-size: 10px; font-weight: 700; text-transform: uppercase;
+      padding: 2px 8px; border-radius: 100px;
+    }
+    .host-badge.free { background: rgba(34,197,94,0.15); color: var(--green); }
+    .host-badge.selfhost { background: rgba(99,102,241,0.15); color: var(--primary-light); }
+
+    /* ── COMPARISON TABLE ── */
+    .compare-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .compare-table th {
+      padding: 10px 14px; text-align: left;
+      border-bottom: 1px solid var(--border);
+      color: var(--muted); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em;
+    }
+    .compare-table td {
+      padding: 10px 14px; border-bottom: 1px solid var(--border);
+    }
+    .compare-table tr:last-child td { border-bottom: none; }
+    .compare-table .col-ss { color: var(--primary-light); font-weight: 700; }
+    .check { color: var(--green); }
+    .cross { color: #ef4444; }
+    .partial { color: #eab308; }
+
+    /* ── QUICK START ── */
+    .steps { display: flex; flex-direction: column; gap: 1rem; }
+    .step {
+      display: flex; gap: 1rem; align-items: flex-start;
+      background: var(--bg2); border: 1px solid var(--border);
+      border-radius: 10px; padding: 1.25rem;
+    }
+    .step-num {
+      width: 28px; height: 28px; border-radius: 50%;
+      background: var(--primary); color: white;
+      font-size: 12px; font-weight: 800;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+    }
+    .step h4 { font-size: 14px; font-weight: 700; margin-bottom: 0.3rem; }
+    .step p { font-size: 12.5px; color: var(--muted); }
+    .step code {
+      background: var(--bg3); border: 1px solid var(--border);
+      border-radius: 5px; padding: 0.5rem 0.75rem; display: block;
+      font-size: 11.5px; color: var(--muted); margin-top: 0.5rem;
+      font-family: 'SF Mono', 'Fira Code', monospace;
+    }
+
+    /* ── FOOTER ── */
+    footer {
+      border-top: 1px solid var(--border);
+      padding: 2rem; text-align: center;
+      font-size: 12.5px; color: var(--muted);
+    }
+    footer a { color: var(--muted); }
+    footer a:hover { color: var(--primary-light); }
+    .footer-links { display: flex; gap: 1.5rem; justify-content: center; margin-bottom: 1rem; }
+
+    /* ── DIVIDER ── */
+    .divider { max-width: 860px; margin: 0 auto 5rem; padding: 0 2rem; }
+    hr { border: none; border-top: 1px solid var(--border); }
+  </style>
+</head>
+<body>
+
+<!-- NAV -->
+<nav>
+  <div class="nav-logo"><span class="soul">Soul</span><span class="search">Search</span></div>
+  <div class="nav-links">
+    <a href="#features">Features</a>
+    <a href="#privacy">Privacy</a>
+    <a href="#install">Install</a>
+    <a href="https://github.com/menonpg/soulsearch" target="_blank">GitHub</a>
+  </div>
+  <a class="nav-cta btn" href="https://github.com/menonpg/soulsearch" target="_blank">⭐ Star on GitHub</a>
+</nav>
+
+<!-- HERO -->
+<section class="hero">
+  <div class="hero-badge">🧠 Powered by soul.py · Open Source · Free</div>
+  <h1>Your AI browser.<br>Your memory.<br>Your Git repo.</h1>
+  <p>
+    AI research assistant for Chrome with persistent memory — stored in your own private Git repo,
+    not on Google's servers. Works with GitHub, GitLab, Gitea, or a Raspberry Pi in your house.
+  </p>
+  <div class="hero-actions">
+    <a class="btn btn-primary" href="https://github.com/menonpg/soulsearch" target="_blank">
+      🔍 Get SoulSearch
+    </a>
+    <a class="btn btn-outline" href="https://github.com/menonpg/soul.py" target="_blank">
+      soul.py →
+    </a>
+  </div>
+</section>
+
+<!-- EXTENSION MOCKUP -->
+<div class="mockup-wrap">
+  <div class="extension-mockup">
+    <div class="mock-header">
+      <div class="mock-logo"><span class="s">Soul</span>Search</div>
+      <div class="mock-status"><span class="mock-dot"></span> Memory active</div>
+    </div>
+    <div class="mock-context"><span>Reading:</span> The dog cancer vaccine pipeline is real…</div>
+    <div class="mock-chat">
+      <div class="mock-msg sys">Ask me anything. I remember everything from your previous sessions.</div>
+      <div class="mock-msg user">What was I researching last week about mRNA?</div>
+      <div class="mock-msg ai">Last week you were looking at the Moderna/Merck KEYNOTE-942 trial for mRNA-4157. You noted the melanoma DMFS improvement data and flagged the FDA Breakthrough Therapy designation. This page seems related — want me to connect the dots?</div>
+    </div>
+    <div class="mock-memory">💭 Memory: KEYNOTE-942 · mRNA-4157 · neoantigen vaccines · March 9</div>
+    <div class="mock-input-area">
+      <div class="mock-input">Ask about this page, or continue your research…</div>
+      <div class="mock-input-row">
+        <span class="mock-icon-btn">📄</span>
+        <span class="mock-icon-btn">🧠</span>
+        <span class="mock-send">Ask →</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- PRIVACY CALLOUT -->
+<div id="privacy" class="section">
+  <div class="privacy-callout">
+    <h2>🔐 Your memory belongs to you</h2>
+    <p>Every other AI browser extension stores your data on the provider's servers, or syncs through Google Chrome Sync. SoulSearch doesn't. Everything that matters lives in a private Git repo you control — on hardware you choose.</p>
+    <div class="privacy-model">
+      <div class="privacy-box git">
+        <h4>✅ Your private Git repo</h4>
+        <code>
+          <span class="file">SOUL.md</span>          <span class="comment"># who the AI is</span><br>
+          <span class="file">MEMORY.md</span>         <span class="comment"># long-term memory</span><br>
+          <span class="file">memory/2026-03-15.md</span><br>
+          <span class="file">soulsearch-settings.json</span>
+        </code>
+      </div>
+      <div class="privacy-box local">
+        <h4>🔒 Your device only (never synced)</h4>
+        <code>
+          <span class="file">LLM API keys</span>     <span class="comment"># Anthropic/OpenAI/Gemini</span><br>
+          <span class="file">Git access token</span>  <span class="comment"># never leaves device</span><br>
+          <span class="comment"># chrome.storage.local</span><br>
+          <span class="comment"># NOT chrome.storage.sync</span>
+        </code>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- GIT HOSTS -->
+<div class="section">
+  <div class="section-label">Works with any Git</div>
+  <h2>Your Git host. Your choice.</h2>
+  <p>GitHub, GitLab, Gitea, or a Raspberry Pi in your house. If it has an HTTP API, SoulSearch works with it.</p>
+  <div class="hosts-grid">
+    <div class="host-card">
+      <div class="host-icon">🐙</div>
+      <h4>GitHub</h4>
+      <p>Private repo, fine-grained PAT</p>
+      <span class="host-badge free">Free tier</span>
+    </div>
+    <div class="host-card">
+      <div class="host-icon">🦊</div>
+      <h4>GitLab</h4>
+      <p>gitlab.com or self-hosted CE</p>
+      <span class="host-badge free">Free tier</span>
+    </div>
+    <div class="host-card">
+      <div class="host-icon">🫖</div>
+      <h4>Gitea / Forgejo</h4>
+      <p>Self-hosted, any machine</p>
+      <span class="host-badge selfhost">Self-hosted</span>
+    </div>
+    <div class="host-card">
+      <div class="host-icon">🍓</div>
+      <h4>Raspberry Pi</h4>
+      <p>Gitea on $35 hardware, fully offline</p>
+      <span class="host-badge selfhost">Air-gapped</span>
+    </div>
+  </div>
+</div>
+
+<!-- FEATURES -->
+<div id="features" class="section">
+  <div class="section-label">Features</div>
+  <h2>Smarter than a tab. Smarter every session.</h2>
+  <p>SoulSearch reads the page, remembers your research, and knows who you are — because you told it.</p>
+  <div class="features-grid">
+    <div class="feature-card">
+      <div class="feature-icon">🧠</div>
+      <h3>Persistent Memory</h3>
+      <p>Remembers what you researched last week, last month. Every session builds on the last.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">🔍</div>
+      <h3>Page Context AI</h3>
+      <p>Automatically reads and understands any webpage. Ask questions about what you're reading.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">🎭</div>
+      <h3>Agent Identity</h3>
+      <p>Define who your AI is with SOUL.md. Set expertise, tone, focus areas — your AI, your way.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">💾</div>
+      <h3>Save to Memory</h3>
+      <p>Right-click any text → Save to memory. Instantly committed to your private Git repo.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">🔌</div>
+      <h3>Any LLM</h3>
+      <p>Anthropic Claude, OpenAI GPT-4o, or Google Gemini. Your key, your model, your cost.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">📖</div>
+      <h3>Open Source</h3>
+      <p>MIT license. Read the code. Audit it. Fork it. Self-host everything. No black boxes.</p>
+    </div>
+  </div>
+</div>
+
+<!-- COMPARISON -->
+<div class="section">
+  <div class="section-label">Comparison</div>
+  <h2>How it stacks up</h2>
+  <p style="margin-bottom:1.5rem"></p>
+  <table class="compare-table">
+    <thead>
+      <tr>
+        <th>Feature</th>
+        <th class="col-ss">SoulSearch</th>
+        <th>Perplexity Comet</th>
+        <th>Other AI Extensions</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr><td>Memory persists across sessions</td><td class="col-ss check">✅</td><td class="partial">⚠️ cloud-only</td><td class="cross">❌</td></tr>
+      <tr><td>Your data in your own Git repo</td><td class="col-ss check">✅</td><td class="cross">❌</td><td class="cross">❌</td></tr>
+      <tr><td>Works self-hosted (no cloud)</td><td class="col-ss check">✅</td><td class="cross">❌</td><td class="cross">❌</td></tr>
+      <tr><td>API keys stored locally (not synced)</td><td class="col-ss check">✅</td><td class="cross">❌</td><td class="cross">❌</td></tr>
+      <tr><td>Bring your own LLM</td><td class="col-ss check">✅</td><td class="cross">❌</td><td class="partial">⚠️ some</td></tr>
+      <tr><td>Open source + auditable</td><td class="col-ss check">✅</td><td class="cross">❌</td><td class="partial">⚠️ some</td></tr>
+      <tr><td>Configurable AI identity</td><td class="col-ss check">✅</td><td class="cross">❌</td><td class="cross">❌</td></tr>
+      <tr><td>Free</td><td class="col-ss check">✅</td><td class="cross">❌ $20+/mo</td><td class="partial">⚠️ freemium</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- QUICK START -->
+<div id="install" class="section">
+  <div class="section-label">Get started</div>
+  <h2>Up in 5 minutes</h2>
+  <p style="margin-bottom:1.5rem"></p>
+  <div class="steps">
+    <div class="step">
+      <div class="step-num">1</div>
+      <div>
+        <h4>Create your private memory repo</h4>
+        <p>GitHub, GitLab, Gitea, or any Git host. Create a private repo and add a <code>SOUL.md</code> file describing who your AI should be.</p>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">2</div>
+      <div>
+        <h4>Load the extension</h4>
+        <p>Clone the repo, go to <code>chrome://extensions/</code>, enable Developer Mode, and load unpacked.</p>
+        <code>git clone https://github.com/menonpg/soulsearch</code>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">3</div>
+      <div>
+        <h4>Connect your Git repo</h4>
+        <p>Click ⚙ Settings. Enter your repo details and a fine-grained access token. Your token stays on your device — it's never stored anywhere else.</p>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">4</div>
+      <div>
+        <h4>Add your LLM key</h4>
+        <p>Choose Anthropic, OpenAI, or Gemini. Enter your API key — also device-only, never synced.</p>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">5</div>
+      <div>
+        <h4>Start researching</h4>
+        <p>Click the extension on any page. Ask questions. Right-click to save highlights. Memory automatically commits back to your repo.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- FOOTER -->
+<footer>
+  <div class="footer-links">
+    <a href="https://github.com/menonpg/soulsearch" target="_blank">GitHub</a>
+    <a href="https://github.com/menonpg/soul.py" target="_blank">soul.py</a>
+    <a href="https://pypi.org/project/soul-agent/" target="_blank">PyPI</a>
+    <a href="https://blog.themenonlab.com" target="_blank">Blog</a>
+    <a href="https://thinkcreateai.com" target="_blank">ThinkCreate.AI</a>
+  </div>
+  <div>MIT License · Built by <a href="https://thinkcreateai.com" target="_blank">ThinkCreate.AI</a> · Powered by <a href="https://github.com/menonpg/soul.py" target="_blank">soul.py</a></div>
+</footer>
+
+</body>
+</html>
