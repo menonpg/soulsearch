@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SoulSearch</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <div class="ss-container">
+    <!-- Header -->
+    <div class="ss-header">
+      <div class="ss-logo">
+        <span class="ss-soul">Soul</span><span class="ss-search">Search</span>
+      </div>
+      <div class="ss-status" id="ss-status">
+        <span class="ss-dot" id="ss-dot"></span>
+        <span id="ss-status-text">Connecting...</span>
+      </div>
+    </div>
+
+    <!-- Page Context Strip -->
+    <div class="ss-context-strip" id="ss-context-strip">
+      <span class="ss-context-label">Reading:</span>
+      <span class="ss-context-title" id="ss-page-title">—</span>
+    </div>
+
+    <!-- Chat Area -->
+    <div class="ss-chat" id="ss-chat">
+      <div class="ss-message ss-message--system">
+        Ask me anything about this page, or start a research thread. I remember everything.
+      </div>
+    </div>
+
+    <!-- Memory Peek -->
+    <div class="ss-memory-peek" id="ss-memory-peek" style="display:none">
+      <span class="ss-memory-label">💭 Memory:</span>
+      <span class="ss-memory-text" id="ss-memory-text"></span>
+    </div>
+
+    <!-- Input -->
+    <div class="ss-input-area">
+      <textarea
+        id="ss-input"
+        class="ss-input"
+        placeholder="Ask about this page, research a topic, or continue where you left off..."
+        rows="2"
+      ></textarea>
+      <div class="ss-input-actions">
+        <button class="ss-btn ss-btn--icon" id="ss-ctx-btn" title="Include page context">📄</button>
+        <button class="ss-btn ss-btn--icon" id="ss-mem-btn" title="Show memory">🧠</button>
+        <button class="ss-btn ss-btn--primary" id="ss-send-btn">Ask →</button>
+      </div>
+    </div>
+
+    <!-- Settings -->
+    <div class="ss-footer">
+      <a href="#" id="ss-settings-link" class="ss-link">⚙ Settings</a>
+      <span class="ss-divider">·</span>
+      <a href="https://github.com/menonpg/soulsearch" target="_blank" class="ss-link">GitHub</a>
+      <span class="ss-divider">·</span>
+      <a href="https://pypi.org/project/soul-agent/" target="_blank" class="ss-link">soul.py</a>
+    </div>
+  </div>
+
+  <div id="ss-settings" class="ss-settings" style="display:none">
+    <div class="ss-settings-inner">
+      <h3>Settings</h3>
+      <label>SoulMate API URL
+        <input type="text" id="cfg-api-url" placeholder="https://soulmate-api-production.up.railway.app" />
+      </label>
+      <label>API Key (optional)
+        <input type="password" id="cfg-api-key" placeholder="sk-..." />
+      </label>
+      <label>LLM Provider
+        <select id="cfg-provider">
+          <option value="anthropic">Anthropic (Claude)</option>
+          <option value="openai">OpenAI (GPT-4o)</option>
+          <option value="gemini">Google Gemini</option>
+        </select>
+      </label>
+      <label>LLM API Key
+        <input type="password" id="cfg-llm-key" placeholder="Your API key" />
+      </label>
+      <label>Soul Identity (SOUL.md content)
+        <textarea id="cfg-soul" rows="4" placeholder="I am a research assistant who..."></textarea>
+      </label>
+      <div class="ss-settings-actions">
+        <button class="ss-btn ss-btn--primary" id="cfg-save">Save</button>
+        <button class="ss-btn" id="cfg-cancel">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="popup.js" type="module"></script>
+</body>
+</html>
