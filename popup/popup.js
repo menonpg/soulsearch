@@ -70,11 +70,23 @@ $('ss-mem-close').addEventListener('click', function() {
   $('ss-memory-peek').style.display = 'none';
 });
 $('ss-mem-push').addEventListener('click', pushMemoryToGit);
-$('ss-mem-reset').addEventListener('click', resetMemoryFromGit);
+$('ss-mem-reset').addEventListener('click', function() { showVersionPicker(); });
 $('ss-settings-link').addEventListener('click', function(e) {
   e.preventDefault();
   showSettings();
 });
+$('ss-session-select').addEventListener('change', function() { switchSession(this.value); });
+$('ss-session-new').addEventListener('click', newSession);
+$('ss-session-del').addEventListener('click', deleteSession);
+$('ss-chat-clear').addEventListener('click', async function() {
+  if (!confirm('Clear this conversation?')) return;
+  chatHistory = [];
+  await saveCurrentHistory();
+  var chat = $('ss-chat');
+  chat.innerHTML = '<div class="ss-message ss-message--system">Conversation cleared.</div>';
+});
+$('ss-ver-close').addEventListener('click', function() { $('ss-ver-modal').style.display = 'none'; });
+$('ss-mem-reset').addEventListener('click', function() { showVersionPicker(); });
 $('ss-agent-btn').addEventListener('click', function() {
   agentMode = !agentMode;
   var btn = $('ss-agent-btn');
@@ -213,7 +225,7 @@ async function runAgent(task) {
     stepEl.remove();
     appendMessage('assistant', result);
     chatHistory.push({ role: 'assistant', content: result });
-    await chrome.storage.local.set({ chatHistory: chatHistory.slice(-40) });
+    await saveCurrentHistory();
   } catch(err) {
     stepEl.remove();
     appendMessage('assistant', 'Agent error: ' + err.message);
@@ -257,7 +269,7 @@ async function sendMessage() {
       $('ss-memory-text').textContent = response.memory_used;
     }
 
-    await chrome.storage.local.set({ chatHistory: chatHistory.slice(-40) });
+    await saveCurrentHistory();
   } catch (err) {
     loadingEl.remove();
     appendMessage('assistant', '\u26a0\ufe0f Error: ' + err.message);
