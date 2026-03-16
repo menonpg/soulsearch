@@ -11,6 +11,7 @@ let chatHistory = [];
 // ── Init ─────────────────────────────────────────────────────────────────────
 
 async function init() {
+  try {
   const config = await loadConfig();
   api = new SoulSearchAPI(config);
 
@@ -39,11 +40,17 @@ async function init() {
 
   // Show memory peek if available
   if (ok) {
-    const memory = await api.getMemoryPeek();
-    if (memory) {
-      $('ss-memory-peek').style.display = 'block';
-      $('ss-memory-text').textContent = memory;
-    }
+    try {
+      const memory = await api.getMemoryPeek();
+      if (memory) {
+        $('ss-memory-peek').style.display = 'block';
+        $('ss-memory-text').textContent = memory;
+      }
+    } catch(e) { /* memory peek optional */ }
+  }
+  } catch(e) {
+    console.error('SoulSearch init error:', e);
+    setStatus('error', 'Error: ' + e.message);
   }
 }
 
@@ -180,8 +187,22 @@ async function loadConfig() {
     gitBranch: 'main',
     gitToken: '',
   };
-  const stored = await chrome.storage.local.get(defaults);
-  return { ...defaults, ...stored };
+  try {
+    // Read from local storage
+    const local = await chrome.storage.local.get(defaults);
+    // Migrate any keys that were previously saved to sync storage
+    try {
+      const sync = await chrome.storage.sync.get(['llmKey', 'apiKey', 'provider']);
+      if (sync.llmKey && !local.llmKey) {
+        local.llmKey = sync.llmKey;
+        await chrome.storage.local.set({ llmKey: sync.llmKey });
+      }
+    } catch(e) { /* sync not available */ }
+    return { ...defaults, ...local };
+  } catch(e) {
+    console.error('loadConfig error:', e);
+    return defaults;
+  }
 }
 
 async function showSettings() {
