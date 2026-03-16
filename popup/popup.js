@@ -265,12 +265,35 @@ function appendMessage(role, content) {
   el.className = 'ss-message ss-message--' + role;
   if (role === 'assistant') {
     el.innerHTML = renderMarkdown(content);
+    // Add save-to-memory button
+    var saveBtn = document.createElement('button');
+    saveBtn.className = 'ss-save-btn';
+    saveBtn.textContent = 'save to memory';
+    saveBtn.title = 'Append this to your memory';
+    saveBtn.addEventListener('click', function() {
+      saveToMemory(content, window.location.href || '');
+      saveBtn.textContent = 'saved';
+      saveBtn.disabled = true;
+    });
+    el.appendChild(saveBtn);
   } else {
     el.textContent = content;
   }
   chat.appendChild(el);
   chat.scrollTop = chat.scrollHeight;
   return el;
+}
+
+async function saveToMemory(text, source) {
+  var stored = await chrome.storage.local.get(['soul_memory']);
+  var existing = stored.soul_memory || '';
+  var date = new Date().toISOString().slice(0, 10);
+  var entry = '\n\n[' + date + (source ? ' | ' + source.slice(0, 60) : '') + ']\n' + text.slice(0, 800);
+  var updated = existing + entry;
+  await chrome.storage.local.set({ soul_memory: updated });
+  // Update memory panel if open
+  var memText = $('ss-memory-text');
+  if (memText) memText.textContent = updated;
 }
 
 function setStatus(state, text) {
