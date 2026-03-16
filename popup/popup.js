@@ -164,13 +164,16 @@ async function resetMemoryFromGit() {
 
 async function pushMemoryToGit() {
   var btn = $('ss-mem-push');
+  var statusEl = $('ss-mem-status');
   var orig = btn.textContent;
   btn.textContent = '...';
   btn.disabled = true;
+  if (statusEl) statusEl.textContent = 'Pushing...';
   try {
     var config = await loadConfig();
     if (!config.gitOwner || !config.gitToken) {
-      alert('Git not configured. Open Settings to add your repo.');
+      if (statusEl) statusEl.textContent = 'Git not configured - open Settings';
+      btn.textContent = orig; btn.disabled = false;
       return;
     }
     var stored = await chrome.storage.local.get(['soul_memory']);
@@ -183,12 +186,12 @@ async function pushMemoryToGit() {
       gitBranch: config.gitBranch || 'main',
       gitToken: config.gitToken
     }, null, memory);
-    btn.textContent = 'done';
-    setTimeout(function() { btn.textContent = orig; btn.disabled = false; }, 2000);
+    btn.textContent = orig; btn.disabled = false;
+    if (statusEl) statusEl.textContent = 'Pushed to ' + config.gitOwner + '/' + config.gitRepo;
   } catch(e) {
-    alert('Git push failed: ' + e.message);
-    btn.textContent = orig;
-    btn.disabled = false;
+    btn.textContent = orig; btn.disabled = false;
+    if (statusEl) statusEl.textContent = 'Push failed: ' + e.message;
+    console.error('Push failed:', e);
   }
 }
 
