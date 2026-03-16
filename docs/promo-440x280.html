@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { width: 440px; height: 280px; overflow: hidden; background: #0a0816; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+  .card {
+    width: 440px; height: 280px;
+    background: linear-gradient(135deg, #0a0816 0%, #1a1040 50%, #0d0a1a 100%);
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 32px 36px; position: relative; overflow: hidden;
+  }
+  .glow {
+    position: absolute; width: 300px; height: 300px;
+    background: radial-gradient(circle, rgba(124,58,237,0.25) 0%, transparent 70%);
+    top: -80px; right: -60px; pointer-events: none;
+  }
+  .glow2 {
+    position: absolute; width: 200px; height: 200px;
+    background: radial-gradient(circle, rgba(99,102,241,0.15) 0%, transparent 70%);
+    bottom: -60px; left: 40px; pointer-events: none;
+  }
+  .left { flex: 1; z-index: 1; }
+  .icon { width: 52px; height: 52px; background: linear-gradient(135deg, #7c3aed, #4f46e5); border-radius: 14px; display: flex; align-items: center; justify-content: center; font-size: 28px; margin-bottom: 14px; box-shadow: 0 4px 20px rgba(124,58,237,0.4); }
+  h1 { color: #fff; font-size: 28px; font-weight: 700; letter-spacing: -0.5px; margin-bottom: 6px; }
+  .sub { color: #a78bfa; font-size: 13px; font-weight: 500; margin-bottom: 16px; }
+  .pills { display: flex; gap: 6px; flex-wrap: wrap; }
+  .pill { background: rgba(124,58,237,0.2); border: 1px solid rgba(124,58,237,0.4); color: #c4b5fd; font-size: 10px; padding: 3px 8px; border-radius: 20px; }
+  .right { z-index: 1; margin-left: 24px; }
+  .mockup { background: #1e1b2e; border: 1px solid #3b3262; border-radius: 12px; padding: 12px; width: 148px; }
+  .mock-bar { background: #2d2b42; border-radius: 4px; height: 8px; margin-bottom: 8px; }
+  .mock-bar.w80 { width: 80%; }
+  .mock-bar.w60 { width: 60%; }
+  .mock-bar.w90 { width: 90%; background: #4c1d95; }
+  .mock-msg { background: #312e81; border-radius: 6px; padding: 6px 8px; margin-bottom: 6px; }
+  .mock-msg p { color: #c4b5fd; font-size: 8px; line-height: 1.4; }
+  .mock-resp { background: #1e1b2e; border: 1px solid #3b3262; border-radius: 6px; padding: 6px 8px; }
+  .mock-resp p { color: #a1a1aa; font-size: 8px; line-height: 1.4; }
+  .badge { position: absolute; top: 16px; right: 16px; background: rgba(16,185,129,0.15); border: 1px solid rgba(16,185,129,0.3); color: #34d399; font-size: 9px; padding: 3px 8px; border-radius: 20px; font-weight: 600; letter-spacing: 0.5px; }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="glow"></div>
+  <div class="glow2"></div>
+  <span class="badge">MIT · OPEN SOURCE</span>
+  <div class="left">
+    <div class="icon">🔍</div>
+    <h1>SoulSearch</h1>
+    <div class="sub">AI that remembers — your memory, your Git repo</div>
+    <div class="pills">
+      <span class="pill">Claude · GPT · Gemini</span>
+      <span class="pill">Git-backed memory</span>
+      <span class="pill">Browser agent</span>
+    </div>
+  </div>
+  <div class="right">
+    <div class="mockup">
+      <div class="mock-bar w80"></div>
+      <div class="mock-bar w90"></div>
+      <div style="margin: 8px 0 6px">
+        <div class="mock-msg"><p>Summarize this paper and compare with my notes</p></div>
+        <div class="mock-resp"><p>Based on the page + your MEMORY.md: this builds on your PINN work from last week...</p></div>
+      </div>
+      <div class="mock-bar w60"></div>
+    </div>
+  </div>
+</div>
+</body>
+</html>
