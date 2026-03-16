@@ -66,27 +66,54 @@
   <div id="ss-settings" class="ss-settings" style="display:none">
     <div class="ss-settings-inner">
       <h3>Settings</h3>
-      <label>SoulMate API URL
-        <input type="text" id="cfg-api-url" placeholder="https://soulmate-api-production.up.railway.app" />
-      </label>
-      <label>API Key (optional)
-        <input type="password" id="cfg-api-key" placeholder="sk-..." />
-      </label>
-      <label>LLM Provider
-        <select id="cfg-provider">
-          <option value="anthropic">Anthropic (Claude)</option>
-          <option value="openai">OpenAI (GPT-4o)</option>
-          <option value="gemini">Google Gemini</option>
-        </select>
-      </label>
-      <label>LLM API Key
-        <input type="password" id="cfg-llm-key" placeholder="Your API key" />
-      </label>
-      <label>Soul Identity (SOUL.md content)
-        <textarea id="cfg-soul" rows="4" placeholder="I am a research assistant who..."></textarea>
-      </label>
+
+      <div class="ss-settings-section">
+        <div class="ss-settings-section-title">🤖 LLM</div>
+        <label>Provider
+          <select id="cfg-provider">
+            <option value="anthropic">Anthropic (Claude)</option>
+            <option value="openai">OpenAI (GPT-4o)</option>
+            <option value="gemini">Google Gemini</option>
+          </select>
+        </label>
+        <label>API Key
+          <input type="password" id="cfg-llm-key" placeholder="sk-ant-... or sk-..." />
+        </label>
+      </div>
+
+      <div class="ss-settings-section">
+        <div class="ss-settings-section-title">🗄️ Git Memory <span class="ss-optional">(optional — stores SOUL.md + MEMORY.md)</span></div>
+        <label>Git Host
+          <select id="cfg-git-provider">
+            <option value="github">GitHub</option>
+            <option value="gitlab">GitLab</option>
+            <option value="gitea">Gitea / Forgejo</option>
+          </select>
+        </label>
+        <label>Repo Owner
+          <input type="text" id="cfg-git-owner" placeholder="e.g. menonpg" />
+        </label>
+        <label>Repo Name
+          <input type="text" id="cfg-git-repo" placeholder="e.g. soulsearch-memory" />
+        </label>
+        <label>Branch
+          <input type="text" id="cfg-git-branch" placeholder="main" />
+        </label>
+        <label>Access Token <span class="ss-optional">(fine-grained PAT, repo read/write)</span>
+          <input type="password" id="cfg-git-token" placeholder="github_pat_..." />
+        </label>
+        <div id="cfg-git-status" class="ss-git-status"></div>
+      </div>
+
+      <div class="ss-settings-section">
+        <div class="ss-settings-section-title">🎭 Identity</div>
+        <label>Soul (SOUL.md — or leave blank to load from Git repo)
+          <textarea id="cfg-soul" rows="3" placeholder="I am a research assistant with persistent memory..."></textarea>
+        </label>
+      </div>
+
       <div class="ss-settings-actions">
-        <button class="ss-btn ss-btn--primary" id="cfg-save">Save</button>
+        <button class="ss-btn ss-btn--primary" id="cfg-save">Save &amp; Sync Memory</button>
         <button class="ss-btn" id="cfg-cancel">Cancel</button>
       </div>
     </div>
