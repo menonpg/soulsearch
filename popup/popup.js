@@ -70,6 +70,7 @@ $('ss-mem-close').addEventListener('click', function() {
   $('ss-memory-peek').style.display = 'none';
 });
 $('ss-mem-push').addEventListener('click', pushMemoryToGit);
+$('ss-mem-reset').addEventListener('click', resetMemoryFromGit);
 $('ss-settings-link').addEventListener('click', function(e) {
   e.preventDefault();
   showSettings();
@@ -123,6 +124,43 @@ async function getPageText() {
   return null;
 }
 
+
+
+async function resetMemoryFromGit() {
+  if (!confirm('Re-pull MEMORY.md and SOUL.md from Git? This will overwrite any unsaved local changes.')) return;
+  var btn = $('ss-mem-reset');
+  btn.textContent = '...';
+  btn.disabled = true;
+  try {
+    var config = await loadConfig();
+    if (!config.gitOwner || !config.gitToken) {
+      alert('Git not configured. Open Settings first.');
+      btn.textContent = '\u21ba';
+      btn.disabled = false;
+      return;
+    }
+    // Clear local memory first
+    await chrome.storage.local.remove(['soul_memory', 'soul_soul']);
+    // Re-pull from git
+    var mod = await import('../api/git-storage.js');
+    var result = await mod.loadMemoryFromGit({
+      gitProvider: config.gitProvider,
+      gitOwner: config.gitOwner,
+      gitRepo: config.gitRepo,
+      gitBranch: config.gitBranch || 'main',
+      gitToken: config.gitToken
+    });
+    // Refresh display
+    var fullMem = result.memory || '';
+    $('ss-memory-text').textContent = fullMem;
+    btn.textContent = 'done';
+    setTimeout(function() { btn.textContent = '\u21ba'; btn.disabled = false; }, 2000);
+  } catch(e) {
+    alert('Reset failed: ' + e.message);
+    btn.textContent = '\u21ba';
+    btn.disabled = false;
+  }
+}
 
 async function pushMemoryToGit() {
   var btn = $('ss-mem-push');
