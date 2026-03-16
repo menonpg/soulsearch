@@ -25,6 +25,15 @@
       <span class="ss-context-title" id="ss-page-title">—</span>
     </div>
 
+    <!-- Session Bar -->
+    <div class="ss-session-bar" id="ss-session-bar">
+      <select class="ss-session-select" id="ss-session-select" title="Switch session"></select>
+      <button class="ss-btn ss-btn--icon ss-btn--xs" id="ss-session-new" title="New session">+</button>
+      <button class="ss-btn ss-btn--icon ss-btn--xs" id="ss-session-del" title="Delete session">&#128465;</button>
+      <span class="ss-session-spacer"></span>
+      <button class="ss-btn ss-btn--icon ss-btn--xs" id="ss-chat-clear" title="Clear conversation">&#128465; chat</button>
+    </div>
+
     <!-- Chat Area -->
     <div class="ss-chat" id="ss-chat">
       <div class="ss-message ss-message--system">
@@ -128,6 +137,17 @@
         <button class="ss-btn ss-btn--primary" id="cfg-save">Save &amp; Sync Memory</button>
         <button class="ss-btn" id="cfg-cancel">Cancel</button>
       </div>
+    </div>
+  </div>
+
+  <!-- Memory version picker -->
+  <div id="ss-ver-modal" class="ss-ver-modal" style="display:none">
+    <div class="ss-ver-modal-inner">
+      <div class="ss-ver-header">
+        <span>Restore memory from commit</span>
+        <button class="ss-btn ss-btn--icon ss-btn--xs" id="ss-ver-close">&#215;</button>
+      </div>
+      <div id="ss-ver-list" class="ss-ver-list">Loading...</div>
     </div>
   </div>
 
