@@ -98,16 +98,14 @@ async function getPageText() {
     var results = await chrome.scripting.executeScript({
       target: { tabId: tab.id },
       func: function() {
-        // Remove clutter elements
-        var skip = document.querySelectorAll('script,style,nav,header,footer,aside,noscript,iframe');
-        var texts = [];
-        skip.forEach(function(el) { el.remove(); });
+        // innerText already skips script/style/hidden — DO NOT modify the DOM
         var text = (document.body.innerText || document.body.textContent || '').trim();
+        var metaEl = document.querySelector('meta[name="description"]');
         return {
           url: location.href,
           title: document.title,
-          text: text.replace(/[\t ]{3,}/g, ' ').replace(/\n{4,}/g, '\n\n').slice(0, 8000),
-          metaDesc: (document.querySelector('meta[name="description"]') || {}).content || null
+          text: text.replace(/[ \t]{3,}/g, ' ').replace(/\n{4,}/g, '\n\n').slice(0, 8000),
+          metaDesc: metaEl ? metaEl.content : null
         };
       }
     });
