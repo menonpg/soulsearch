@@ -12,43 +12,37 @@ let chatHistory = [];
 
 async function init() {
   try {
-  const config = await loadConfig();
-  api = new SoulSearchAPI(config);
+    const config = await loadConfig();
+    api = new SoulSearchAPI(config);
 
-  // Test connection
-  const ok = await api.ping();
-  setStatus(ok ? 'connected' : 'error', ok ? 'Memory active' : 'No API — check settings');
+    const ok = await api.ping();
+    setStatus(ok ? 'connected' : 'error', ok ? 'Memory active' : 'No API key — open Settings');
 
-  // Get page context from active tab
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  if (tab) {
-    $('ss-page-title').textContent = tab.title || tab.url || '—';
-    try {
-      const resp = await chrome.tabs.sendMessage(tab.id, { type: 'GET_CONTEXT' });
-      if (resp?.context) pageContext = resp.context;
-    } catch (e) {
-      // Content script not injected (chrome:// pages etc.)
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (tab) {
+      $('ss-page-title').textContent = tab.title || tab.url || '—';
+      try {
+        const resp = await chrome.tabs.sendMessage(tab.id, { type: 'GET_CONTEXT' });
+        if (resp?.context) pageContext = resp.context;
+      } catch (e) { /* content script not on this page */ }
     }
-  }
 
-  // Restore chat history
-  const stored = await chrome.storage.local.get('chatHistory');
-  if (stored.chatHistory?.length) {
-    chatHistory = stored.chatHistory.slice(-20); // last 20 messages
-    chatHistory.forEach(m => appendMessage(m.role, m.content));
-  }
+    const stored = await chrome.storage.local.get('chatHistory');
+    if (stored.chatHistory?.length) {
+      chatHistory = stored.chatHistory.slice(-20);
+      chatHistory.forEach(m => appendMessage(m.role, m.content));
+    }
 
-  // Show memory peek if available
-  if (ok) {
-    try {
-      const memory = await api.getMemoryPeek();
-      if (memory) {
-        $('ss-memory-peek').style.display = 'block';
-        $('ss-memory-text').textContent = memory;
-      }
-    } catch(e) { /* memory peek optional */ }
-  }
-  } catch(e) {
+    if (ok) {
+      try {
+        const memory = await api.getMemoryPeek();
+        if (memory) {
+          $('ss-memory-peek').style.display = 'block';
+          $('ss-memory-text').textContent = memory;
+        }
+      } catch (e) { /* optional */ }
+    }
+  } catch (e) {
     console.error('SoulSearch init error:', e);
     setStatus('error', 'Error: ' + e.message);
   }
@@ -63,9 +57,8 @@ $('ss-input').addEventListener('keydown', e => {
 $('ss-ctx-btn').addEventListener('click', () => {
   includeContext = !includeContext;
   $('ss-ctx-btn').style.opacity = includeContext ? '1' : '0.4';
-  $('ss-ctx-btn').title = includeContext ? 'Page context: ON' : 'Page context: OFF';
 });
-$('ss-mem-btn').addEventListener('click', async () => {
+$('ss-mem-btn').addEventListener('click', () => {
   const peek = $('ss-memory-peek');
   peek.style.display = peek.style.display === 'none' ? 'block' : 'none';
 });
@@ -78,7 +71,7 @@ $('cfg-cancel').addEventListener('click', () => {
 });
 $('cfg-save').addEventListener('click', saveSettings);
 
-// ── Core: send message ────────────────────────────────────────────────────────
+// ── Send message ──────────────────────────────────────────────────────────────
 
 async function sendMessage() {
   const input = $('ss-input');
@@ -89,11 +82,11 @@ async function sendMessage() {
   appendMessage('user', query);
   chatHistory.push({ role: 'user', content: query });
 
-  const loadingEl = appendMessage('loading', '⏳ Thinking...');
+  const loadingEl = appendMessage('loading', '⏳ Thinking…');
 
   try {
     const context = includeContext && pageContext
-      ? `[Page: ${pageContext.title}]\n${pageContext.text?.slice(0, 3000)}`
+      ? '[Page: ' + pageContext.title + ']\n' + (pageContext.text || '').slice(0, 3000)
       : null;
 
     const response = await api.ask(query, context, chatHistory.slice(-10));
@@ -101,62 +94,68 @@ async function sendMessage() {
     appendMessage('assistant', response.answer);
     chatHistory.push({ role: 'assistant', content: response.answer });
 
-    // Update memory peek
     if (response.memory_used) {
       $('ss-memory-peek').style.display = 'block';
       $('ss-memory-text').textContent = response.memory_used;
     }
 
-    // Persist chat
     await chrome.storage.local.set({ chatHistory: chatHistory.slice(-40) });
   } catch (err) {
     loadingEl.remove();
-    appendMessage('assistant', `⚠️ Error: ${err.message}. Check your settings.`);
+    appendMessage('assistant', '\u26a0\ufe0f Error: ' + err.message);
   }
+}
+
+// ── Markdown renderer ─────────────────────────────────────────────────────────
+
+function renderMarkdown(raw) {
+  // Escape HTML first
+  let s = raw
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+
+  // Bold and italic (do before other replacements)
+  s = s.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  s = s.replace(/\*(.+?)\*/g, '<em>$1</em>');
+
+  // Inline code
+  s = s.replace(/`([^`]+)`/g, '<code>$1</code>');
+
+  // Headers
+  s = s.replace(/^### (.+)$/gm, '<h4 style="margin:6px 0 2px;color:#a78bfa;font-size:12px">$1</h4>');
+  s = s.replace(/^## (.+)$/gm,  '<h3 style="margin:8px 0 3px;color:#818cf8;font-size:13px">$1</h3>');
+  s = s.replace(/^# (.+)$/gm,   '<h3 style="margin:8px 0 3px;color:#818cf8;font-size:14px">$1</h3>');
+
+  // Bullet lists — collect consecutive li lines
+  s = s.replace(/(^[-*] .+$(\n|$))+/gm, function(block) {
+    const items = block.trim().split('\n')
+      .map(l => '<li>' + l.replace(/^[-*] /, '') + '</li>')
+      .join('');
+    return '<ul style="margin:4px 0;padding-left:18px">' + items + '</ul>';
+  });
+
+  // Numbered lists
+  s = s.replace(/(^\d+\. .+$(\n|$))+/gm, function(block) {
+    const items = block.trim().split('\n')
+      .map(l => '<li>' + l.replace(/^\d+\. /, '') + '</li>')
+      .join('');
+    return '<ol style="margin:4px 0;padding-left:18px">' + items + '</ol>';
+  });
+
+  // Paragraphs
+  s = s.replace(/\n\n/g, '<br><br>');
+  s = s.replace(/\n/g, '<br>');
+
+  return s;
 }
 
 // ── UI helpers ────────────────────────────────────────────────────────────────
 
-function renderMarkdown(text) {
-  let s = text
-    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  // fenced code blocks
-  s = s.replace(/```[\s\S]*?```/g, m => `<pre><code>${m.slice(3,-3).replace(/^\w+
-/,'')}</code></pre>`);
-  // inline code
-  s = s.replace(/`([^`
-]+)`/g, '<code>$1</code>');
-  // bold / italic
-  s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-  s = s.replace(/\*([^*
-]+)\*/g, '<em>$1</em>');
-  // headers
-  s = s.replace(/^### (.+)$/gm, '<h4 style="margin:6px 0 2px;color:#a78bfa">$1</h4>');
-  s = s.replace(/^## (.+)$/gm,  '<h3 style="margin:8px 0 2px;color:#818cf8">$1</h3>');
-  s = s.replace(/^# (.+)$/gm,   '<h3 style="margin:8px 0 2px;color:#818cf8">$1</h3>');
-  // numbered lists
-  s = s.replace(/^(\d+\. .+)(
-\d+\. .+)*/gm, m =>
-    '<ol style="margin:4px 0;padding-left:18px">' +
-    m.split('
-').map(l => `<li>${l.replace(/^\d+\.\s*/,'')}</li>`).join('') + '</ol>');
-  // bullet lists
-  s = s.replace(/^[-*] (.+)$/gm, '<li>$1</li>');
-  s = s.replace(/(<li>[\s\S]+?<\/li>
-?)+/g, m =>
-    `<ul style="margin:4px 0;padding-left:18px">${m}</ul>`);
-  // paragraphs
-  s = s.replace(/
-
-/g, '<br><br>').replace(/
-/g, '<br>');
-  return s;
-}
-
 function appendMessage(role, content) {
   const chat = $('ss-chat');
   const el = document.createElement('div');
-  el.className = `ss-message ss-message--${role}`;
+  el.className = 'ss-message ss-message--' + role;
   if (role === 'assistant') {
     el.innerHTML = renderMarkdown(content);
   } else {
@@ -168,8 +167,7 @@ function appendMessage(role, content) {
 }
 
 function setStatus(state, text) {
-  const dot = $('ss-dot');
-  dot.className = `ss-dot ${state}`;
+  $('ss-dot').className = 'ss-dot ' + state;
   $('ss-status-text').textContent = text;
 }
 
@@ -188,42 +186,40 @@ async function loadConfig() {
     gitToken: '',
   };
   try {
-    // Read from local storage
     const local = await chrome.storage.local.get(defaults);
-    // Migrate any keys that were previously saved to sync storage
+    // Migrate from old sync storage
     try {
-      const sync = await chrome.storage.sync.get(['llmKey', 'apiKey', 'provider']);
+      const sync = await chrome.storage.sync.get(['llmKey', 'provider']);
       if (sync.llmKey && !local.llmKey) {
         local.llmKey = sync.llmKey;
         await chrome.storage.local.set({ llmKey: sync.llmKey });
       }
-    } catch(e) { /* sync not available */ }
+    } catch (e) { /* sync unavailable */ }
     return { ...defaults, ...local };
-  } catch(e) {
-    console.error('loadConfig error:', e);
+  } catch (e) {
     return defaults;
   }
 }
 
 async function showSettings() {
   const config = await loadConfig();
-  $('cfg-provider').value   = config.provider;
-  $('cfg-llm-key').value    = config.llmKey;
-  $('cfg-model').value      = config.model;
+  $('cfg-provider').value     = config.provider;
+  $('cfg-llm-key').value      = config.llmKey;
+  $('cfg-model').value        = config.model;
   $('cfg-git-provider').value = config.gitProvider;
-  $('cfg-git-owner').value  = config.gitOwner;
-  $('cfg-git-repo').value   = config.gitRepo;
-  $('cfg-git-branch').value = config.gitBranch || 'main';
-  $('cfg-git-token').value  = config.gitToken;
-  $('cfg-soul').value       = config.soul;
+  $('cfg-git-owner').value    = config.gitOwner;
+  $('cfg-git-repo').value     = config.gitRepo;
+  $('cfg-git-branch').value   = config.gitBranch || 'main';
+  $('cfg-git-token').value    = config.gitToken;
+  $('cfg-soul').value         = config.soul;
   $('ss-settings').style.display = 'block';
 }
 
 async function saveSettings() {
-  const gitOwner  = $('cfg-git-owner').value.trim();
-  const gitRepo   = $('cfg-git-repo').value.trim();
-  const gitBranch = $('cfg-git-branch').value.trim() || 'main';
-  const gitToken  = $('cfg-git-token').value.trim();
+  const gitOwner    = $('cfg-git-owner').value.trim();
+  const gitRepo     = $('cfg-git-repo').value.trim();
+  const gitBranch   = $('cfg-git-branch').value.trim() || 'main';
+  const gitToken    = $('cfg-git-token').value.trim();
   const gitProvider = $('cfg-git-provider').value;
 
   await chrome.storage.local.set({
@@ -234,20 +230,18 @@ async function saveSettings() {
     gitProvider, gitOwner, gitRepo, gitBranch, gitToken,
   });
 
-  // If Git config is present, pull SOUL.md + MEMORY.md now
   if (gitOwner && gitRepo && gitToken) {
     const statusEl = $('cfg-git-status');
     statusEl.className = 'ss-git-status info';
-    statusEl.textContent = '⏳ Syncing memory from Git…';
+    statusEl.textContent = '\u23f3 Syncing memory from Git\u2026';
     try {
       const { loadMemoryFromGit } = await import('../api/git-storage.js');
       await loadMemoryFromGit({ gitProvider, gitOwner, gitRepo, gitBranch, gitToken });
       statusEl.className = 'ss-git-status ok';
-      statusEl.textContent = '✅ Memory synced from Git';
+      statusEl.textContent = '\u2705 Memory synced from Git';
     } catch (e) {
       statusEl.className = 'ss-git-status err';
-      statusEl.textContent = `❌ Git sync failed: ${e.message}`;
-      console.error('Git sync error:', e);
+      statusEl.textContent = '\u274c Git sync failed: ' + e.message;
     }
   }
 
