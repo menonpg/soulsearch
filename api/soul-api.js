@@ -259,7 +259,8 @@ export class SoulSearchAPI {
     var maxSteps = 12;
 
     for (var step = 0; step < maxSteps; step++) {
-      var resp = await this._callAnthropicTools(system, messages, tools, step === 0);
+      var tc = (step === 0) ? { type: 'tool', name: 'snapshot_page' } : { type: 'auto' };
+      var resp = await this._callAnthropicTools(system, messages, tools, tc);
 
       // Collect text and tool_use blocks
       var textParts = [];
@@ -345,21 +346,19 @@ export class SoulSearchAPI {
     });
   }
 
-  async _execScript(fn) {
+  async _execInTab(fn, args) {
     var tabs = await chrome.tabs.query({ active: true, currentWindow: true });
     if (!tabs[0]) throw new Error('No active tab');
-    var extraArgs = Array.prototype.slice.call(arguments, 1);
-    // Set any window vars needed, then run the function
-    if (extraArgs.length > 0) {
-      var setters = extraArgs.map(function(a) { return 'window.' + a.key + ' = ' + JSON.stringify(a.val) + ';'; }).join('');
-      await chrome.scripting.executeScript({ target: { tabId: tabs[0].id }, func: new Function(setters) });
-    }
-    var results = await chrome.scripting.executeScript({ target: { tabId: tabs[0].id }, func: fn });
+    var results = await chrome.scripting.executeScript({
+      target: { tabId: tabs[0].id },
+      func: fn,
+      args: args || []
+    });
     return results && results[0] ? results[0].result : null;
   }
 
-  async _callAnthropicTools(system, messages, tools, forceToolUse) {
-    var toolChoice = forceToolUse ? { type: 'any' } : { type: 'auto' };
+  async _callAnthropicTools(system, messages, tools, toolChoice) {
+    if (!toolChoice) toolChoice = { type: 'auto' };
     var r = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
