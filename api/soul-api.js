@@ -1,89 +1,160 @@
-// SoulSearch API layer — connects to SoulMate API or local soul.py instance
+// SoulSearch API layer
+// Calls LLM providers directly (Anthropic / OpenAI / Gemini).
+// No middleware or proxy required — your API key stays on your device.
 
 export class SoulSearchAPI {
   constructor(config) {
-    this.apiUrl = config.apiUrl?.replace(/\/$/, '') || 'https://soulmate-api-production.up.railway.app';
-    this.apiKey = config.apiKey || '';
     this.provider = config.provider || 'anthropic';
-    this.llmKey = config.llmKey || '';
-    this.soul = config.soul || '';
+    this.llmKey   = config.llmKey   || '';
+    this.soul     = config.soul     || 'I am a research assistant with persistent memory. I help you understand and research web content.';
+    // SoulMate API optional — only used if explicitly configured with a key
+    this.apiUrl   = config.apiUrl?.replace(/\/$/, '') || '';
+    this.apiKey   = config.apiKey   || '';
   }
 
-  headers() {
-    const h = { 'Content-Type': 'application/json' };
-    if (this.apiKey) h['Authorization'] = `Bearer ${this.apiKey}`;
-    return h;
+  // ── Status ──────────────────────────────────────────────────────────────────
+
+  ping() {
+    // Ready if an LLM key is configured — no network call needed
+    return Promise.resolve(!!this.llmKey);
   }
 
-  // Health check
-  async ping() {
-    try {
-      const r = await fetch(`${this.apiUrl}/health`, { headers: this.headers(), signal: AbortSignal.timeout(5000) });
-      return r.ok;
-    } catch { return false; }
-  }
+  // ── Core ask ─────────────────────────────────────────────────────────────────
 
-  // Core: ask with memory injection + page context
   async ask(query, pageContext = null, history = []) {
-    const messages = [
-      ...(this.soul ? [{ role: 'system', content: this.soul }] : []),
-      ...(pageContext ? [{ role: 'system', content: `Current page context:\n${pageContext}` }] : []),
-      ...history.map(m => ({ role: m.role, content: m.content })),
+    if (!this.llmKey) throw new Error('No LLM key set — open Settings and add your API key');
+
+    // Build system prompt: soul identity + memory + page context
+    let systemParts = [this.soul];
+
+    // Pull cached memory (written by git-storage.js or remember())
+    const cached = await chrome.storage.local.get(['soul_memory']);
+    if (cached.soul_memory) {
+      systemParts.push(`\n\n--- Your Memory ---\n${cached.soul_memory}`);
+    }
+    if (pageContext) {
+      systemParts.push(`\n\n--- Current Page ---\n${pageContext}`);
+    }
+    const systemPrompt = systemParts.join('');
+
+    // Build message history (last 10 turns)
+    const msgs = [
+      ...history.slice(-10).map(m => ({ role: m.role, content: m.content })),
       { role: 'user', content: query }
     ];
 
-    const body = {
-      query,
-      messages,
-      provider: this.provider,
-      llm_key: this.llmKey,
-      page_context: pageContext,
-      inject_memory: true
-    };
+    switch (this.provider) {
+      case 'anthropic': return this._callAnthropic(systemPrompt, msgs);
+      case 'openai':    return this._callOpenAI(systemPrompt, msgs);
+      case 'gemini':    return this._callGemini(systemPrompt, msgs);
+      default:          throw new Error(`Unknown provider: ${this.provider}`);
+    }
+  }
 
-    const r = await fetch(`${this.apiUrl}/ask`, {
+  // ── Anthropic (Claude) ───────────────────────────────────────────────────────
+
+  async _callAnthropic(system, messages) {
+    const r = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
-      headers: this.headers(),
-      body: JSON.stringify(body),
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': this.llmKey,
+        'anthropic-version': '2023-06-01'
+      },
+      body: JSON.stringify({
+        model: 'claude-3-5-haiku-20241022',
+        max_tokens: 1024,
+        system,
+        messages
+      }),
       signal: AbortSignal.timeout(30000)
     });
 
-    if (!r.ok) throw new Error(`API error ${r.status}`);
-    return r.json(); // { answer, route, memory_used, ... }
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({}));
+      throw new Error(`Anthropic ${r.status}: ${err.error?.message || r.statusText}`);
+    }
+    const data = await r.json();
+    return { answer: data.content[0].text, memory_used: null };
   }
 
-  // Save something to memory
-  async remember(text, source = '') {
-    const r = await fetch(`${this.apiUrl}/memory`, {
+  // ── OpenAI (GPT) ─────────────────────────────────────────────────────────────
+
+  async _callOpenAI(system, messages) {
+    const r = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
-      headers: this.headers(),
-      body: JSON.stringify({ text, source, timestamp: new Date().toISOString() }),
-      signal: AbortSignal.timeout(10000)
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${this.llmKey}`
+      },
+      body: JSON.stringify({
+        model: 'gpt-4o-mini',
+        messages: [{ role: 'system', content: system }, ...messages]
+      }),
+      signal: AbortSignal.timeout(30000)
     });
-    if (!r.ok) throw new Error(`Memory save failed ${r.status}`);
-    return r.json();
+
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({}));
+      throw new Error(`OpenAI ${r.status}: ${err.error?.message || r.statusText}`);
+    }
+    const data = await r.json();
+    return { answer: data.choices[0].message.content, memory_used: null };
   }
 
-  // Get recent memory snippet for the UI peek
+  // ── Gemini ───────────────────────────────────────────────────────────────────
+
+  async _callGemini(system, messages) {
+    const contents = messages.map(m => ({
+      role: m.role === 'assistant' ? 'model' : 'user',
+      parts: [{ text: m.content }]
+    }));
+
+    const r = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${this.llmKey}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          system_instruction: { parts: [{ text: system }] },
+          contents
+        }),
+        signal: AbortSignal.timeout(30000)
+      }
+    );
+
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({}));
+      throw new Error(`Gemini ${r.status}: ${err.error?.message || r.statusText}`);
+    }
+    const data = await r.json();
+    return { answer: data.candidates[0].content.parts[0].text, memory_used: null };
+  }
+
+  // ── Memory helpers ────────────────────────────────────────────────────────────
+
+  async remember(text, source = '') {
+    const stored = await chrome.storage.local.get(['soul_memory']);
+    const existing = stored.soul_memory || '';
+    const entry = `\n[${new Date().toISOString().slice(0,10)}] ${source ? `(${source}) ` : ''}${text}`;
+    await chrome.storage.local.set({ soul_memory: existing + entry });
+    return { ok: true };
+  }
+
   async getMemoryPeek() {
-    try {
-      const r = await fetch(`${this.apiUrl}/memory/peek`, {
-        headers: this.headers(),
-        signal: AbortSignal.timeout(5000)
-      });
-      if (!r.ok) return null;
-      const data = await r.json();
-      return data.snippet || null;
-    } catch { return null; }
+    const stored = await chrome.storage.local.get(['soul_memory']);
+    const mem = stored.soul_memory || '';
+    if (!mem) return null;
+    // Return last 200 chars as a snippet
+    return mem.slice(-200).trim();
   }
 
-  // Search memory
   async searchMemory(query) {
-    const r = await fetch(`${this.apiUrl}/memory/search?q=${encodeURIComponent(query)}`, {
-      headers: this.headers(),
-      signal: AbortSignal.timeout(10000)
-    });
-    if (!r.ok) throw new Error(`Memory search failed ${r.status}`);
-    return r.json(); // { results: [...] }
+    const stored = await chrome.storage.local.get(['soul_memory']);
+    const mem = stored.soul_memory || '';
+    const lines = mem.split('\n').filter(l =>
+      l.toLowerCase().includes(query.toLowerCase())
+    );
+    return { results: lines };
   }
 }
