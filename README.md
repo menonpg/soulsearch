@@ -4,6 +4,8 @@
 
 Powered by [soul.py](https://github.com/menonpg/soul.py). Open source. Self-hostable.
 
+**[📖 Full guide + screenshots](https://blog.themenonlab.com/blog/soulsearch-ai-browser-extension-private-git-memory)** · **[🌐 Landing page](https://menonpg.github.io/soulsearch/)** · **[🔒 Privacy policy](https://menonpg.github.io/soulsearch/privacy.html)** · **[Chrome Web Store](https://chrome.google.com/webstore/detail/soulsearch/plhnknkgpgkeljdbdgjkcpjkipdlaalg)** *(pending review)*
+
 ---
 
 ## The privacy model
@@ -154,4 +156,4 @@ MIT — same as [soul.py](https://github.com/menonpg/soul.py)
 
 ---
 
-*Built on [soul.py](https://github.com/menonpg/soul.py) · [ThinkCreate.AI](https://thinkcreateai.com) · [Blog](https://blog.themenonlab.com)*
+*Built on [soul.py](https://github.com/menonpg/soul.py) · [ThinkCreate.AI](https://thinkcreateai.com) · [Full writeup](https://blog.themenonlab.com/blog/soulsearch-ai-browser-extension-private-git-memory)*
