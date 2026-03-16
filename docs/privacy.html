@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Privacy Policy — SoulSearch</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0a0816; color: #c4b5fd; min-height: 100vh; padding: 40px 20px; }
+    .container { max-width: 760px; margin: 0 auto; }
+    a { color: #818cf8; }
+    h1 { font-size: 2rem; color: #a78bfa; margin-bottom: 8px; }
+    .sub { color: #6b7280; font-size: 0.9rem; margin-bottom: 40px; }
+    h2 { font-size: 1.1rem; color: #a78bfa; margin: 32px 0 10px; }
+    p, li { line-height: 1.7; color: #d1d5db; font-size: 0.95rem; margin-bottom: 10px; }
+    ul { padding-left: 20px; }
+    .highlight { background: #1e1b2e; border: 1px solid #3b3262; border-radius: 8px; padding: 16px 20px; margin: 20px 0; }
+    .highlight p { margin: 0; color: #c4b5fd; }
+    nav { margin-bottom: 32px; }
+    nav a { color: #6b7280; font-size: 0.9rem; text-decoration: none; }
+    nav a:hover { color: #a78bfa; }
+    footer { margin-top: 60px; padding-top: 20px; border-top: 1px solid #2d2b42; color: #6b7280; font-size: 0.85rem; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <nav><a href="index.html">&larr; Back to SoulSearch</a></nav>
+
+    <h1>Privacy Policy</h1>
+    <p class="sub">SoulSearch Chrome Extension &mdash; Last updated: March 16, 2026</p>
+
+    <div class="highlight">
+      <p><strong>Short version:</strong> SoulSearch stores your data on your device and in your own Git repo. We have no servers. We collect nothing. We see nothing.</p>
+    </div>
+
+    <h2>1. What SoulSearch Is</h2>
+    <p>SoulSearch is a Chrome extension that adds a persistent AI assistant to your browser. It reads the current webpage to answer questions in context, and stores a memory file (MEMORY.md) in a private Git repository that you own and control.</p>
+
+    <h2>2. Data We Collect</h2>
+    <p><strong>We collect no data.</strong> SoulSearch has no backend servers, no analytics, no telemetry, and no user accounts. There is no "we" in the data-collection sense — there is only your browser and your Git repo.</p>
+
+    <h2>3. Data Stored on Your Device</h2>
+    <p>SoulSearch stores the following in <code>chrome.storage.local</code> on your device only:</p>
+    <ul>
+      <li>Your LLM provider API key (Anthropic, OpenAI, or Gemini)</li>
+      <li>Your Git repository access token (Personal Access Token)</li>
+      <li>Your MEMORY.md and SOUL.md files (cached locally for speed)</li>
+      <li>Conversation history per session (last 40 messages)</li>
+      <li>Extension settings (provider, model, Git repo details)</li>
+    </ul>
+    <p>This data is stored using <code>chrome.storage.local</code> — it is <strong>never synced through Chrome Sync</strong> and never leaves your device except as described below.</p>
+
+    <h2>4. Data Sent to Third Parties</h2>
+    <p>When you ask a question, SoulSearch sends the following directly from your browser to your chosen LLM provider:</p>
+    <ul>
+      <li>Your query text</li>
+      <li>Relevant text extracted from the current webpage</li>
+      <li>Your MEMORY.md and SOUL.md content (as context)</li>
+    </ul>
+    <p>This request goes directly to the provider (Anthropic, OpenAI, or Google) — not through any SoulSearch proxy. It is governed by your provider's privacy policy:</p>
+    <ul>
+      <li><a href="https://www.anthropic.com/privacy" target="_blank">Anthropic Privacy Policy</a></li>
+      <li><a href="https://openai.com/policies/privacy-policy" target="_blank">OpenAI Privacy Policy</a></li>
+      <li><a href="https://policies.google.com/privacy" target="_blank">Google Privacy Policy</a></li>
+    </ul>
+    <p>When you sync memory, SoulSearch reads and writes MEMORY.md to your configured Git repository (GitHub, GitLab, Gitea, etc.) using your Personal Access Token. This is governed by your Git provider's privacy policy.</p>
+
+    <h2>5. Page Content Access</h2>
+    <p>SoulSearch reads the text content of webpages you are actively viewing, using the Chrome <code>scripting</code> permission. This content is:</p>
+    <ul>
+      <li>Read only when the SoulSearch popup is open and active</li>
+      <li>Sent only to your chosen LLM provider as part of a query</li>
+      <li>Never stored permanently (not saved to disk, memory, or Git)</li>
+      <li>Never sent to SoulSearch servers (which do not exist)</li>
+    </ul>
+
+    <h2>6. Permissions Explained</h2>
+    <ul>
+      <li><strong>activeTab + scripting:</strong> Read the text of the page you are currently viewing, to answer questions about it</li>
+      <li><strong>storage:</strong> Save your settings, API keys, and memory locally on your device</li>
+      <li><strong>contextMenus:</strong> Add right-click options (Save to memory, Ask SoulSearch, Summarize page)</li>
+      <li><strong>sidePanel:</strong> Allow SoulSearch to open as a side panel instead of a popup</li>
+      <li><strong>host_permissions (&lt;all_urls&gt;):</strong> Required to read text from any webpage you visit, regardless of domain</li>
+    </ul>
+
+    <h2>7. Children's Privacy</h2>
+    <p>SoulSearch is not directed at children under 13. We do not knowingly collect any information from children.</p>
+
+    <h2>8. Changes to This Policy</h2>
+    <p>If this policy changes materially, we will update the date at the top of this page. Continued use of the extension constitutes acceptance of the updated policy.</p>
+
+    <h2>9. Contact</h2>
+    <p>Questions? Open an issue at <a href="https://github.com/menonpg/soulsearch/issues" target="_blank">github.com/menonpg/soulsearch</a> or email <a href="mailto:prahlad.menon@quant.md">prahlad.menon@quant.md</a>.</p>
+
+    <footer>
+      &copy; 2026 SoulSearch &mdash; MIT License &mdash; <a href="index.html">Back to home</a>
+    </footer>
+  </div>
+</body>
+</html>
