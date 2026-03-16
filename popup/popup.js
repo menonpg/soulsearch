@@ -132,7 +132,7 @@ async function loadConfig() {
   const defaults = {
     provider: 'anthropic',
     llmKey: '',
-    model: 'claude-3-5-sonnet-20241022',
+    model: 'claude-3-haiku-20240307',
     soul: '',
     gitProvider: 'github',
     gitOwner: '',
@@ -168,7 +168,7 @@ async function saveSettings() {
   await chrome.storage.local.set({
     provider:    $('cfg-provider').value,
     llmKey:      $('cfg-llm-key').value.trim(),
-    model:       $('cfg-model').value.trim() || 'claude-3-5-sonnet-20241022',
+    model:       $('cfg-model').value.trim() || 'claude-3-haiku-20240307',
     soul:        $('cfg-soul').value.trim(),
     gitProvider, gitOwner, gitRepo, gitBranch, gitToken,
   });
