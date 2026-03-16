@@ -182,24 +182,28 @@ async function sendMessage() {
 }
 
 async function runAgent(task) {
-  const stepEl = appendMessage('loading', 'Starting agent...');
+  appendMessage('system', '[Agent] Starting...');
+  var debugLog = [];
+  function dbg(msg) {
+    debugLog.push(msg);
+    appendMessage('system', '[Agent] ' + msg);
+  }
   try {
     const result = await api.agentRun(task, function(step) {
-      if (step.type === 'thought' && step.text) {
-        stepEl.textContent = step.text.slice(0, 100);
-      } else if (step.type === 'action') {
-        let d = step.tool.replace(/_/g, ' ');
+      if (step.type === 'thought' && step.text) dbg(step.text);
+      else if (step.type === 'action') {
+        var d = step.tool.replace(/_/g, ' ');
         if (step.input && step.input.element_id) d += ' [' + step.input.element_id + ']';
-        if (step.input && step.input.text) d += ': "' + step.input.text.slice(0, 30) + '"';
-        stepEl.textContent = '> ' + d;
+        if (step.input && step.input.text) d += ': "' + step.input.text.slice(0, 40) + '"';
+        dbg('> ' + d);
+      } else if (step.type === 'done') {
+        dbg('done: ' + (step.text || '').slice(0, 60));
       }
     });
-    stepEl.remove();
     appendMessage('assistant', result);
     chatHistory.push({ role: 'assistant', content: result });
     await saveCurrentHistory();
   } catch(err) {
-    stepEl.remove();
     appendMessage('assistant', 'Agent error: ' + err.message);
   }
 }
