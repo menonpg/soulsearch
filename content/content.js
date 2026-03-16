@@ -7,11 +7,16 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 });
 
 function extractContext() {
-  // Extract meaningful text — skip nav, footer, scripts, ads
-  const skipTags = new Set(['SCRIPT','STYLE','NAV','FOOTER','HEADER','ASIDE','NOSCRIPT','IFRAME']);
-  const article = document.querySelector('article, [role="main"], main, .content, #content, .post-content');
+  const skipTags = new Set(['SCRIPT','STYLE','NAV','FOOTER','ASIDE','NOSCRIPT','IFRAME','SVG']);
+
+  // Try semantic containers first
+  const article = document.querySelector(
+    'article, [role="main"], main, .content, #content, .post-content, ' +
+    '[class*="article"], [class*="post"], [class*="body"], [id*="main"]'
+  );
   const root = article || document.body;
 
+  // Tree walker approach
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
     acceptNode(node) {
       let el = node.parentElement;
@@ -19,7 +24,7 @@ function extractContext() {
         if (skipTags.has(el.tagName)) return NodeFilter.FILTER_REJECT;
         el = el.parentElement;
       }
-      return node.textContent.trim().length > 20
+      return node.textContent.trim().length > 15
         ? NodeFilter.FILTER_ACCEPT
         : NodeFilter.FILTER_REJECT;
     }
@@ -31,10 +36,26 @@ function extractContext() {
     chunks.push(node.textContent.trim());
   }
 
+  let text = chunks.join(' ').replace(/\s+/g, ' ').trim();
+
+  // Fallback for SPAs / dynamic pages: use innerText which includes rendered text
+  if (text.length < 200) {
+    const clone = document.body.cloneNode(true);
+    // Remove script/style/nav/footer from clone
+    ['script','style','nav','footer','aside','noscript','iframe'].forEach(tag => {
+      clone.querySelectorAll(tag).forEach(el => el.remove());
+    });
+    const fallback = (clone.innerText || clone.textContent || '')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 8000);
+    if (fallback.length > text.length) text = fallback;
+  }
+
   return {
     url: location.href,
     title: document.title,
-    text: chunks.join(' ').replace(/\s+/g, ' ').trim(),
+    text,
     selection: window.getSelection()?.toString() || null,
     metaDesc: document.querySelector('meta[name="description"]')?.content || null
   };
