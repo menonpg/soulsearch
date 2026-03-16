@@ -32,10 +32,16 @@
       </div>
     </div>
 
-    <!-- Memory Peek -->
-    <div class="ss-memory-peek" id="ss-memory-peek" style="display:none">
-      <span class="ss-memory-label">💭 Memory:</span>
-      <span class="ss-memory-text" id="ss-memory-text"></span>
+    <!-- Memory Panel (overlay) -->
+    <div class="ss-memory-panel" id="ss-memory-peek" style="display:none">
+      <div class="ss-memory-panel-header">
+        <span>&#129504; Memory</span>
+        <div class="ss-memory-panel-actions">
+          <button class="ss-btn ss-btn--icon ss-btn--small" id="ss-mem-push" title="Push to Git">&#128640;</button>
+          <button class="ss-btn ss-btn--icon ss-btn--small" id="ss-mem-close" title="Close">&#215;</button>
+        </div>
+      </div>
+      <div class="ss-memory-panel-body" id="ss-memory-text"></div>
     </div>
 
     <!-- Input -->
