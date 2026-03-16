@@ -1,97 +1,157 @@
-// SoulSearch content script — extracts page context
-chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+// SoulSearch content script -- extracts page context + browser automation
+var _snapshotMap = {}; // elementId -> DOM element, persists between messages
+
+chrome.runtime.onMessage.addListener(function(msg, sender, sendResponse) {
   if (msg.type === 'GET_CONTEXT') {
     sendResponse({ context: extractContext() });
+    return true;
   }
-  return true;
+  if (msg.type === 'GET_SNAPSHOT') {
+    sendResponse({ snapshot: getSnapshot() });
+    return true;
+  }
+  if (msg.type === 'EXECUTE_ACTION') {
+    executeAction(msg.action, msg.elementId, msg.value)
+      .then(function(r) { sendResponse({ result: r }); })
+      .catch(function(e) { sendResponse({ error: e.message }); });
+    return true; // async response
+  }
+  return false;
 });
 
+// ---- Context extraction (plain text for Q&A) ---------------------------
+
 function extractContext() {
-  const url = location.href;
-  const title = document.title;
-  const metaDesc = document.querySelector('meta[name="description"]')?.content || null;
-  const selection = window.getSelection()?.toString() || null;
+  var url = location.href;
+  var title = document.title;
+  var metaDesc = null;
+  var metaEl = document.querySelector('meta[name="description"]');
+  if (metaEl) metaDesc = metaEl.content;
+  var selection = null;
+  if (window.getSelection) selection = window.getSelection().toString() || null;
 
-  // ── Colab-specific extraction ────────────────────────────────────────────
-  if (url.includes('colab.research.google.com') || url.includes('colab.google')) {
-    const chunks = [];
-
-    // Markdown/text cells
-    document.querySelectorAll(
-      '.text-cell-preview, .cell-text-output, colab-rich-text-cell'
-    ).forEach(el => {
-      const t = el.innerText || el.textContent || '';
-      if (t.trim().length > 10) chunks.push(t.trim());
-    });
-
-    // Code cells
-    document.querySelectorAll(
-      'pre.CodeMirror-line, .view-line, .codecell-input, colab-code-cell'
-    ).forEach(el => {
-      const t = el.innerText || el.textContent || '';
-      if (t.trim().length > 5) chunks.push(t.trim());
-    });
-
-    // Cell outputs
-    document.querySelectorAll('.output-container, .cell-output-ipywidget-background').forEach(el => {
-      const t = el.innerText || '';
-      if (t.trim().length > 10) chunks.push('[Output] ' + t.trim().slice(0, 500));
-    });
-
-    const text = chunks.join('\n').slice(0, 8000);
-    if (text.length > 100) {
-      return { url, title, text, selection, metaDesc };
-    }
-  }
-
-  // ── General extraction ───────────────────────────────────────────────────
-  const skipTags = new Set(['SCRIPT','STYLE','NAV','FOOTER','ASIDE','NOSCRIPT','IFRAME','SVG']);
-
-  const article = document.querySelector(
-    'article, [role="main"], main, .content, #content, .post-content, ' +
-    '[class*="article"], [class*="post-body"], [id*="main-content"]'
-  );
-  const root = article || document.body;
-
-  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
-    acceptNode(node) {
-      let el = node.parentElement;
-      while (el) {
-        if (skipTags.has(el.tagName)) return NodeFilter.FILTER_REJECT;
-        el = el.parentElement;
-      }
-      return node.textContent.trim().length > 15
-        ? NodeFilter.FILTER_ACCEPT
-        : NodeFilter.FILTER_REJECT;
+  var skip = document.querySelectorAll('script,style,nav,header,footer,aside,noscript,iframe');
+  var tempRemoved = [];
+  skip.forEach(function(el) {
+    if (el.parentNode) {
+      tempRemoved.push({ el: el, parent: el.parentNode, next: el.nextSibling });
+      el.parentNode.removeChild(el);
     }
   });
 
-  const chunks = [];
-  let node;
-  while ((node = walker.nextNode()) && chunks.join(' ').length < 8000) {
-    chunks.push(node.textContent.trim());
+  var text = (document.body.innerText || document.body.textContent || '').trim();
+  text = text.replace(/\t| {3,}/g, ' ').replace(/\n{4,}/g, '\n\n').slice(0, 8000);
+
+  // Restore removed elements
+  tempRemoved.forEach(function(item) {
+    item.parent.insertBefore(item.el, item.next);
+  });
+
+  return { url: url, title: title, text: text, selection: selection, metaDesc: metaDesc };
+}
+
+// ---- Snapshot (numbered interactive elements for agent) ----------------
+
+function getSnapshot() {
+  _snapshotMap = {};
+  var id = 1;
+  var elements = [];
+
+  var sel = 'a[href], button:not([disabled]), input:not([type="hidden"]):not([disabled]), ' +
+            'textarea:not([disabled]), select:not([disabled]), [role="button"], [role="link"]';
+
+  document.querySelectorAll(sel).forEach(function(el) {
+    if (!isVisible(el)) return;
+    var info = {
+      id: id,
+      tag: el.tagName.toLowerCase(),
+      type: el.getAttribute('type') || null,
+      text: getElementLabel(el),
+      href: el.href || null
+    };
+    _snapshotMap[id] = el;
+    elements.push(info);
+    id++;
+  });
+
+  return {
+    url: location.href,
+    title: document.title,
+    elements: elements,
+    pageText: (document.body.innerText || '').slice(0, 1500)
+  };
+}
+
+function isVisible(el) {
+  var rect = el.getBoundingClientRect();
+  if (rect.width === 0 && rect.height === 0) return false;
+  var style = window.getComputedStyle(el);
+  if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return false;
+  return true;
+}
+
+function getElementLabel(el) {
+  var text = (el.getAttribute('aria-label') || el.getAttribute('title') ||
+              el.getAttribute('placeholder') || el.value || el.innerText || el.textContent || '').trim();
+  return text.slice(0, 80);
+}
+
+// ---- Action execution --------------------------------------------------
+
+async function executeAction(action, elementId, value) {
+  if (action === 'scroll') {
+    var amount = 350;
+    if (value === 'down') window.scrollBy(0, amount);
+    else if (value === 'up') window.scrollBy(0, -amount);
+    else if (value === 'top') window.scrollTo(0, 0);
+    else if (value === 'bottom') window.scrollTo(0, document.body.scrollHeight);
+    return { done: true, scrolled: value };
   }
 
-  let text = chunks.join(' ').replace(/\s+/g, ' ').trim();
-
-  // SPA fallback: use innerText when tree walker yields thin content
-  if (text.length < 300) {
-    try {
-      const clone = document.body.cloneNode(true);
-      ['script','style','nav','footer','aside','noscript','iframe'].forEach(tag => {
-        clone.querySelectorAll(tag).forEach(el => el.remove());
-      });
-      const fallback = (clone.innerText || clone.textContent || '')
-        .replace(/\s+/g, ' ').trim().slice(0, 8000);
-      if (fallback.length > text.length) text = fallback;
-    } catch(e) { /* fallback failed */ }
+  if (action === 'navigate') {
+    window.location.href = value;
+    return { done: true, navigating: value };
   }
 
-  return { url, title, text, selection, metaDesc };
+  var el = _snapshotMap[elementId];
+  if (!el) throw new Error('Element ' + elementId + ' not found -- take a new snapshot first');
+
+  el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  await sleep(150);
+
+  if (action === 'click') {
+    el.focus();
+    el.click();
+    await sleep(300);
+    return { done: true, clicked: getElementLabel(el) };
+  }
+
+  if (action === 'type') {
+    el.focus();
+    el.value = value;
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+    return { done: true, typed: value, into: getElementLabel(el) };
+  }
+
+  if (action === 'select') {
+    el.focus();
+    el.value = value;
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+    return { done: true, selected: value };
+  }
+
+  throw new Error('Unknown action: ' + action);
+}
+
+function sleep(ms) {
+  return new Promise(function(resolve) { setTimeout(resolve, ms); });
 }
 
 // Right-click selection tracking
-document.addEventListener('mouseup', () => {
-  const sel = window.getSelection()?.toString().trim();
-  if (sel) chrome.runtime.sendMessage({ type: 'SELECTION_UPDATED', selection: sel });
+document.addEventListener('mouseup', function() {
+  if (window.getSelection) {
+    var sel = window.getSelection().toString().trim();
+    if (sel) chrome.runtime.sendMessage({ type: 'SELECTION_UPDATED', selection: sel });
+  }
 });
