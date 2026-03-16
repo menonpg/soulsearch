@@ -25,17 +25,22 @@ export class SoulSearchAPI {
   async ask(query, pageContext = null, history = []) {
     if (!this.llmKey) throw new Error('No LLM key set — open Settings and add your API key');
 
-    // Build system prompt: soul identity + memory + page context
-    let systemParts = [this.soul];
+    // Build system prompt: soul → page context (primary) → memory (background)
+    const cached = await chrome.storage.local.get(['soul_memory', 'soul_soul']);
+    const soulIdentity = cached.soul_soul || this.soul;
 
-    // Pull cached memory (written by git-storage.js or remember())
-    const cached = await chrome.storage.local.get(['soul_memory']);
-    if (cached.soul_memory) {
-      systemParts.push(`\n\n--- Your Memory ---\n${cached.soul_memory}`);
-    }
+    let systemParts = [soulIdentity];
+
+    // Page context comes FIRST — if the user asks about the page, this is the source of truth
     if (pageContext) {
-      systemParts.push(`\n\n--- Current Page ---\n${pageContext}`);
+      systemParts.push(`\n\n--- Current Page (answer questions about this page from here) ---\n${pageContext}`);
     }
+
+    // Memory is background context — useful for personalisation, not primary source
+    if (cached.soul_memory) {
+      systemParts.push(`\n\n--- Your Background Memory (use as context, not as the primary answer unless directly relevant) ---\n${cached.soul_memory.slice(0, 6000)}`);
+    }
+
     const systemPrompt = systemParts.join('');
 
     // Build message history (last 10 turns)
