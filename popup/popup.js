@@ -74,6 +74,15 @@ $('ss-settings-link').addEventListener('click', function(e) {
   e.preventDefault();
   showSettings();
 });
+$('ss-agent-btn').addEventListener('click', function() {
+  agentMode = !agentMode;
+  var btn = $('ss-agent-btn');
+  btn.style.outline = agentMode ? '2px solid #a78bfa' : 'none';
+  $('ss-send-btn').textContent = agentMode ? 'Run' : 'Ask ->';
+  if (agentMode) {
+    appendMessage('system', 'Agent mode ON. Describe a task and I will act on this page.');
+  }
+});
 $('cfg-cancel').addEventListener('click', function() {
   $('ss-settings').style.display = 'none';
 });
@@ -147,6 +156,31 @@ async function pushMemoryToGit() {
   }
 }
 
+
+async function runAgent(task) {
+  var stepEl = appendMessage('loading', 'Starting agent...');
+  try {
+    var result = await api.agentRun(task, function(step) {
+      if (step.type === 'thought' && step.text) {
+        stepEl.textContent = step.text.slice(0, 100) + (step.text.length > 100 ? '...' : '');
+      } else if (step.type === 'action') {
+        var d = step.tool.replace(/_/g, ' ');
+        if (step.input && step.input.element_id) d += ' [' + step.input.element_id + ']';
+        if (step.input && step.input.text) d += ': "' + step.input.text.slice(0, 30) + '"';
+        if (step.input && step.input.direction) d += ' ' + step.input.direction;
+        stepEl.textContent = '> ' + d;
+      }
+    });
+    stepEl.remove();
+    appendMessage('assistant', result);
+    chatHistory.push({ role: 'assistant', content: result });
+    await chrome.storage.local.set({ chatHistory: chatHistory.slice(-40) });
+  } catch(err) {
+    stepEl.remove();
+    appendMessage('assistant', 'Agent error: ' + err.message);
+  }
+}
+
 async function sendMessage() {
   var input = $('ss-input');
   var query = input.value.trim();
@@ -155,6 +189,8 @@ async function sendMessage() {
   input.value = '';
   appendMessage('user', query);
   chatHistory.push({ role: 'user', content: query });
+
+  if (agentMode) { await runAgent(query); return; }
 
   var loadingEl = appendMessage('loading', '\u23f3 Thinking\u2026');
 
