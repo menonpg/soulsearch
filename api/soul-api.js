@@ -199,6 +199,18 @@ export class SoulSearchAPI {
         }
       },
       {
+        name: 'select_option',
+        description: 'Select a value from a dropdown or select element. Use for <select> elements or custom dropdowns.',
+        input_schema: {
+          type: 'object',
+          properties: {
+            element_id: { type: 'number', description: 'Element ID from snapshot' },
+            value: { type: 'string', description: 'Option text or value to select' }
+          },
+          required: ['element_id', 'value']
+        }
+      },
+      {
         name: 'scroll',
         description: 'Scroll the page.',
         input_schema: {
@@ -293,6 +305,9 @@ export class SoulSearchAPI {
           } else if (toolName === 'scroll') {
             var r3 = await this._tabMessage({ type: 'EXECUTE_ACTION', action: 'scroll', value: input.direction });
             result = 'Scrolled ' + input.direction;
+          } else if (toolName === 'select_option') {
+            var rs = await this._tabMessage({ type: 'EXECUTE_ACTION', action: 'select', elementId: input.element_id, value: input.value });
+            result = rs.error ? ('Error: ' + rs.error) : JSON.stringify(rs.result);
           } else if (toolName === 'read_page') {
             var r4 = await this._tabMessage({ type: 'GET_CONTEXT' });
             result = (r4.context && r4.context.text) ? r4.context.text.slice(0, 2000) : 'No content';
