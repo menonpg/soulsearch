@@ -302,28 +302,77 @@ export class SoulSearchAPI {
             if (onStep) onStep({ type: 'done', text: input.summary });
             return input.summary;
           } else if (toolName === 'snapshot_page') {
-            var snap = await this._tabMessage({ type: 'GET_SNAPSHOT' });
-            var lines = (snap.snapshot.elements || []).map(function(e) {
-              return '[' + e.id + '] ' + e.tag + (e.type ? '(' + e.type + ')' : '') + ': ' + (e.text || '(no label)');
+            var snapResult = await this._execInTab(function() {
+              window.__ss_map = {};
+              var id = 1; var els = [];
+              var sel = 'a[href], button:not([disabled]), input:not([type="hidden"]):not([disabled]), textarea:not([disabled]), select:not([disabled]), [role="button"], [role="combobox"], [tabindex="0"]';
+              document.querySelectorAll(sel).forEach(function(el) {
+                var rect = el.getBoundingClientRect();
+                if (rect.width === 0 && rect.height === 0) return;
+                var st = window.getComputedStyle(el);
+                if (st.display === 'none' || st.visibility === 'hidden') return;
+                var label = (el.getAttribute('aria-label') || el.getAttribute('title') || el.getAttribute('placeholder') || el.value || el.innerText || '').trim().slice(0, 80);
+                window.__ss_map[id] = el;
+                els.push({ id: id, tag: el.tagName.toLowerCase(), type: el.getAttribute('type') || el.getAttribute('role'), text: label });
+                id++;
+              });
+              return { title: document.title, url: location.href, elements: els };
+            }, []);
+            var lines = (snapResult && snapResult.elements || []).map(function(e) {
+              return '[' + e.id + '] ' + e.tag + (e.type ? '(' + e.type + ')' : '') + ': ' + (e.text || '(empty)');
             });
-            result = 'Page: ' + snap.snapshot.title + '\n' + lines.join('\n');
+            if (onStep) onStep({ type: 'thought', text: '[snapshot] ' + lines.length + ' elements on: ' + (snapResult && snapResult.title || '?') });
+            result = 'Page: ' + (snapResult && snapResult.title || '?') + '\nElements (' + lines.length + '):\n' + lines.slice(0, 60).join('\n');
           } else if (toolName === 'click') {
-            var r = await this._tabMessage({ type: 'EXECUTE_ACTION', action: 'click', elementId: input.element_id });
-            result = r.error ? ('Error: ' + r.error) : JSON.stringify(r.result);
+            var cr = await this._execInTab(function(eid) {
+              var el = window.__ss_map && window.__ss_map[eid];
+              if (!el) return { error: 'Element ' + eid + ' not found -- snapshot first' };
+              el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+              el.focus(); el.click();
+              return { done: true, clicked: (el.getAttribute('aria-label') || el.value || el.innerText || '').slice(0, 50) };
+            }, [input.element_id]);
+            result = (cr && cr.error) ? ('Error: ' + cr.error) : JSON.stringify(cr);
           } else if (toolName === 'type_text') {
-            var r2 = await this._tabMessage({ type: 'EXECUTE_ACTION', action: 'type', elementId: input.element_id, value: input.text });
-            result = r2.error ? ('Error: ' + r2.error) : JSON.stringify(r2.result);
-          } else if (toolName === 'scroll') {
-            var r3 = await this._tabMessage({ type: 'EXECUTE_ACTION', action: 'scroll', value: input.direction });
-            result = 'Scrolled ' + input.direction;
+            var tr = await this._execInTab(function(eid, text) {
+              var el = window.__ss_map && window.__ss_map[eid];
+              if (!el) return { error: 'Element ' + eid + ' not found -- snapshot first' };
+              el.focus();
+              var nd = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value');
+              if (nd && nd.set) nd.set.call(el, text); else el.value = text;
+              el.dispatchEvent(new Event('input', { bubbles: true }));
+              el.dispatchEvent(new Event('change', { bubbles: true }));
+              return { done: true, typed: text };
+            }, [input.element_id, input.text]);
+            result = (tr && tr.error) ? ('Error: ' + tr.error) : JSON.stringify(tr);
           } else if (toolName === 'select_option') {
-            var rs = await this._tabMessage({ type: 'EXECUTE_ACTION', action: 'select', elementId: input.element_id, value: input.value });
-            result = rs.error ? ('Error: ' + rs.error) : JSON.stringify(rs.result);
+            var sr = await this._execInTab(function(eid, val) {
+              var el = window.__ss_map && window.__ss_map[eid];
+              if (!el) return { error: 'Element ' + eid + ' not found -- snapshot first' };
+              el.scrollIntoView({ block: 'center' });
+              if (el.tagName === 'SELECT') {
+                el.value = val; el.dispatchEvent(new Event('change', { bubbles: true }));
+                return { done: true, selected: val };
+              }
+              el.click();
+              return { done: true, clicked_custom_dropdown: val };
+            }, [input.element_id, input.value]);
+            result = (sr && sr.error) ? ('Error: ' + sr.error) : JSON.stringify(sr);
+          } else if (toolName === 'scroll') {
+            await this._execInTab(function(dir) {
+              if (dir === 'down') window.scrollBy(0, 400);
+              else if (dir === 'up') window.scrollBy(0, -400);
+              else if (dir === 'bottom') window.scrollTo(0, document.body.scrollHeight);
+              else window.scrollTo(0, 0);
+              return true;
+            }, [input.direction]);
+            result = 'Scrolled ' + input.direction;
           } else if (toolName === 'read_page') {
-            var r4 = await this._tabMessage({ type: 'GET_CONTEXT' });
-            result = (r4.context && r4.context.text) ? r4.context.text.slice(0, 2000) : 'No content';
+            var rr = await this._execInTab(function() {
+              return (document.body.innerText || '').slice(0, 2000);
+            }, []);
+            result = rr || 'No content';
           } else if (toolName === 'navigate') {
-            await this._tabMessage({ type: 'EXECUTE_ACTION', action: 'navigate', value: input.url });
+            await this._execInTab(function(url) { window.location.href = url; }, [input.url]);
             result = 'Navigating to ' + input.url;
           } else {
             result = 'Unknown tool: ' + toolName;
