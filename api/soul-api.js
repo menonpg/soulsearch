@@ -246,16 +246,20 @@ export class SoulSearchAPI {
 
     var cached = await chrome.storage.local.get(['soul_soul', 'soul_memory']);
     var identity = cached.soul_soul || this.soul || 'You are SoulSearch, a browser automation agent.';
-    var system = identity + '\n\nYou are operating as a browser automation agent. ' +
-      'Use tools to complete the user\'s task step by step. ' +
-      'Start by calling snapshot_page to see what is on the page. ' +
-      'Be precise, efficient, and always call done() when finished.';
+    var system = 'You are a browser automation agent running inside a Chrome extension. ' +
+      'IMPORTANT: You are ALREADY connected to the user\'s active browser tab. ' +
+      'You do NOT need to navigate anywhere or "connect" to a page -- it is already open. ' +
+      'Your FIRST action must ALWAYS be snapshot_page to see what interactive elements exist on the current page. ' +
+      'Then use click, type_text, select_option, and scroll to complete the task. ' +
+      'Never say you cannot access a page -- use snapshot_page immediately. ' +
+      'Call done() with a summary when the task is complete.\n\n' +
+      'User context: ' + identity.slice(0, 300);
 
     var messages = [{ role: 'user', content: task }];
     var maxSteps = 12;
 
     for (var step = 0; step < maxSteps; step++) {
-      var resp = await this._callAnthropicTools(system, messages, tools);
+      var resp = await this._callAnthropicTools(system, messages, tools, step === 0);
 
       // Collect text and tool_use blocks
       var textParts = [];
@@ -341,7 +345,8 @@ export class SoulSearchAPI {
     });
   }
 
-  async _callAnthropicTools(system, messages, tools) {
+  async _callAnthropicTools(system, messages, tools, forceToolUse) {
+    var toolChoice = forceToolUse ? { type: 'any' } : { type: 'auto' };
     var r = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
