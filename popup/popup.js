@@ -43,7 +43,7 @@ async function init() {
       try {
         const memory = await api.getMemoryPeek();
         if (memory) {
-          $('ss-memory-peek').style.display = 'block';
+          // memory panel stays hidden until user clicks brain button
           $('ss-memory-text').textContent = memory;
         }
       } catch (e) { /* optional */ }
@@ -63,9 +63,13 @@ $('ss-ctx-btn').addEventListener('click', function() {
   $('ss-ctx-btn').style.opacity = includeContext ? '1' : '0.4';
 });
 $('ss-mem-btn').addEventListener('click', function() {
-  var peek = $('ss-memory-peek');
-  peek.style.display = peek.style.display === 'none' ? 'block' : 'none';
+  var panel = $('ss-memory-peek');
+  panel.style.display = panel.style.display === 'none' ? 'flex' : 'none';
 });
+$('ss-mem-close').addEventListener('click', function() {
+  $('ss-memory-peek').style.display = 'none';
+});
+$('ss-mem-push').addEventListener('click', pushMemoryToGit);
 $('ss-settings-link').addEventListener('click', function(e) {
   e.preventDefault();
   showSettings();
@@ -112,6 +116,37 @@ async function getPageText() {
   return null;
 }
 
+
+async function pushMemoryToGit() {
+  var btn = $('ss-mem-push');
+  var orig = btn.textContent;
+  btn.textContent = '...';
+  btn.disabled = true;
+  try {
+    var config = await loadConfig();
+    if (!config.gitOwner || !config.gitToken) {
+      alert('Git not configured. Open Settings to add your repo.');
+      return;
+    }
+    var stored = await chrome.storage.local.get(['soul_memory']);
+    var memory = stored.soul_memory || '';
+    var mod = await import('../api/git-storage.js');
+    await mod.saveMemoryToGit({
+      gitProvider: config.gitProvider,
+      gitOwner: config.gitOwner,
+      gitRepo: config.gitRepo,
+      gitBranch: config.gitBranch || 'main',
+      gitToken: config.gitToken
+    }, null, memory);
+    btn.textContent = 'done';
+    setTimeout(function() { btn.textContent = orig; btn.disabled = false; }, 2000);
+  } catch(e) {
+    alert('Git push failed: ' + e.message);
+    btn.textContent = orig;
+    btn.disabled = false;
+  }
+}
+
 async function sendMessage() {
   var input = $('ss-input');
   var query = input.value.trim();
@@ -143,7 +178,7 @@ async function sendMessage() {
     chatHistory.push({ role: 'assistant', content: response.answer });
 
     if (response.memory_used) {
-      $('ss-memory-peek').style.display = 'block';
+      // memory panel stays hidden until user clicks brain button
       $('ss-memory-text').textContent = response.memory_used;
     }
 
@@ -181,6 +216,10 @@ function renderMarkdown(raw) {
   }).join('<br><br>');
 
   s = s.split(LF).join('<br>');
+  // Remove <br> immediately before/after block elements to prevent double spacing
+  s = s.replace(/<br>(<(ul|ol|h3|h4|\/ul|\/ol))/g, '<$2');
+  s = s.replace(/(<\/(ul|ol|h3|h4)>)<br>/g, '</$2>');
+  s = s.replace(/(<br>){3,}/g, '<br><br>');
   return s;
 }
 
