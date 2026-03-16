@@ -30,22 +30,9 @@ function extractContext() {
   var selection = null;
   if (window.getSelection) selection = window.getSelection().toString() || null;
 
-  var skip = document.querySelectorAll('script,style,nav,header,footer,aside,noscript,iframe');
-  var tempRemoved = [];
-  skip.forEach(function(el) {
-    if (el.parentNode) {
-      tempRemoved.push({ el: el, parent: el.parentNode, next: el.nextSibling });
-      el.parentNode.removeChild(el);
-    }
-  });
-
+  // innerText already skips scripts/styles/hidden elements natively
   var text = (document.body.innerText || document.body.textContent || '').trim();
   text = text.replace(/\t| {3,}/g, ' ').replace(/\n{4,}/g, '\n\n').slice(0, 8000);
-
-  // Restore removed elements
-  tempRemoved.forEach(function(item) {
-    item.parent.insertBefore(item.el, item.next);
-  });
 
   return { url: url, title: title, text: text, selection: selection, metaDesc: metaDesc };
 }
@@ -128,9 +115,17 @@ async function executeAction(action, elementId, value) {
 
   if (action === 'type') {
     el.focus();
-    el.value = value;
+    // Try React-compatible value setter first
+    var nativeInputValue = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value') ||
+                           Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value');
+    if (nativeInputValue && nativeInputValue.set && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA')) {
+      nativeInputValue.set.call(el, value);
+    } else {
+      el.value = value;
+    }
     el.dispatchEvent(new Event('input', { bubbles: true }));
     el.dispatchEvent(new Event('change', { bubbles: true }));
+    el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
     return { done: true, typed: value, into: getElementLabel(el) };
   }
 
@@ -139,6 +134,26 @@ async function executeAction(action, elementId, value) {
     el.value = value;
     el.dispatchEvent(new Event('change', { bubbles: true }));
     return { done: true, selected: value };
+  }
+
+  if (action === 'select') {
+    // For <select> elements: set value
+    if (el.tagName === 'SELECT') {
+      el.value = value;
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+      return { done: true, selected: value };
+    }
+    // For custom dropdowns: click to open, then find matching option
+    el.click();
+    await sleep(300);
+    var options = document.querySelectorAll('[role="option"], li[data-value], .option, .select-option');
+    for (var i = 0; i < options.length; i++) {
+      if ((options[i].textContent || '').trim().toLowerCase().includes(value.toLowerCase())) {
+        options[i].click();
+        return { done: true, selected: value };
+      }
+    }
+    return { done: false, error: 'No matching option found for: ' + value };
   }
 
   throw new Error('Unknown action: ' + action);
