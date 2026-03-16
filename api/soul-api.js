@@ -1,6 +1,6 @@
 // SoulSearch API layer
 // Calls LLM providers directly (Anthropic / OpenAI / Gemini).
-// No middleware or proxy required — your API key stays on your device.
+// No middleware or proxy required - your API key stays on your device.
 
 export class SoulSearchAPI {
   constructor(config) {
@@ -8,24 +8,24 @@ export class SoulSearchAPI {
     this.llmKey   = config.llmKey   || '';
     this.soul     = config.soul     || 'I am a research assistant with persistent memory. I help you understand and research web content.';
     this.model    = config.model    || 'claude-3-haiku-20240307';
-    // SoulMate API optional — only used if explicitly configured with a key
+    // SoulMate API optional - only used if explicitly configured with a key
     this.apiUrl   = config.apiUrl?.replace(/\/$/, '') || '';
     this.apiKey   = config.apiKey   || '';
   }
 
-  // ── Status ──────────────────────────────────────────────────────────────────
+  // -- Status ------------------------------------------------------------------
 
   ping() {
-    // Ready if an LLM key is configured — no network call needed
+    // Ready if an LLM key is configured - no network call needed
     return Promise.resolve(!!this.llmKey);
   }
 
-  // ── Core ask ─────────────────────────────────────────────────────────────────
+  // -- Core ask -----------------------------------------------------------------
 
   async ask(query, pageContext = null, history = []) {
-    if (!this.llmKey) throw new Error('No LLM key set — open Settings and add your API key');
+    if (!this.llmKey) throw new Error('No LLM key set - open Settings and add your API key');
 
-    // Build system prompt: soul → page context (primary) → memory (background)
+    // Build system prompt: soul - page context (primary) - memory (background)
     const cached = await chrome.storage.local.get(['soul_memory', 'soul_soul']);
     const defaultSoul = 'You are SoulSearch, a helpful AI research assistant embedded in the browser. ' +
       'You have access to the current page content and the user\'s personal memory. ' +
@@ -35,12 +35,12 @@ export class SoulSearchAPI {
 
     let systemParts = [soulIdentity];
 
-    // Page context comes FIRST — if the user asks about the page, this is the source of truth
+    // Page context comes FIRST - if the user asks about the page, this is the source of truth
     if (pageContext) {
       systemParts.push(`\n\n--- Current Page (answer questions about this page from here) ---\n${pageContext}`);
     }
 
-    // Memory is background context — useful for personalisation, not primary source
+    // Memory is background context - useful for personalisation, not primary source
     if (cached.soul_memory) {
       systemParts.push(`\n\n--- Your Background Memory (use as context, not as the primary answer unless directly relevant) ---\n${cached.soul_memory.slice(0, 6000)}`);
     }
@@ -61,7 +61,7 @@ export class SoulSearchAPI {
     }
   }
 
-  // ── Anthropic (Claude) ───────────────────────────────────────────────────────
+  // -- Anthropic (Claude) -------------------------------------------------------
 
   async _callAnthropic(system, messages) {
     const r = await fetch('https://api.anthropic.com/v1/messages', {
@@ -89,7 +89,7 @@ export class SoulSearchAPI {
     return { answer: data.content[0].text, memory_used: null };
   }
 
-  // ── OpenAI (GPT) ─────────────────────────────────────────────────────────────
+  // -- OpenAI (GPT) -------------------------------------------------------------
 
   async _callOpenAI(system, messages) {
     const r = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -113,7 +113,7 @@ export class SoulSearchAPI {
     return { answer: data.choices[0].message.content, memory_used: null };
   }
 
-  // ── Gemini ───────────────────────────────────────────────────────────────────
+  // -- Gemini -------------------------------------------------------------------
 
   async _callGemini(system, messages) {
     const contents = messages.map(m => ({
@@ -142,7 +142,7 @@ export class SoulSearchAPI {
     return { answer: data.candidates[0].content.parts[0].text, memory_used: null };
   }
 
-  // ── Memory helpers ────────────────────────────────────────────────────────────
+  // -- Memory helpers ------------------------------------------------------------
 
   async remember(text, source = '') {
     const stored = await chrome.storage.local.get(['soul_memory']);
@@ -168,4 +168,187 @@ export class SoulSearchAPI {
     );
     return { results: lines };
   }
+  // ---- Agent mode: multi-step tool calling loop -------------------------
+
+  async agentRun(task, onStep) {
+    var tools = [
+      {
+        name: 'snapshot_page',
+        description: 'Get a numbered list of all interactive elements (buttons, inputs, links) on the current page. Always call this before clicking or typing.',
+        input_schema: { type: 'object', properties: {}, required: [] }
+      },
+      {
+        name: 'click',
+        description: 'Click an element by its ID number from the snapshot.',
+        input_schema: {
+          type: 'object',
+          properties: { element_id: { type: 'number', description: 'Element ID from snapshot' } },
+          required: ['element_id']
+        }
+      },
+      {
+        name: 'type_text',
+        description: 'Type text into an input field or textarea.',
+        input_schema: {
+          type: 'object',
+          properties: {
+            element_id: { type: 'number', description: 'Element ID from snapshot' },
+            text: { type: 'string', description: 'Text to type' }
+          },
+          required: ['element_id', 'text']
+        }
+      },
+      {
+        name: 'scroll',
+        description: 'Scroll the page.',
+        input_schema: {
+          type: 'object',
+          properties: { direction: { type: 'string', enum: ['up', 'down', 'top', 'bottom'] } },
+          required: ['direction']
+        }
+      },
+      {
+        name: 'read_page',
+        description: 'Read the current page text to check results or find information.',
+        input_schema: { type: 'object', properties: {}, required: [] }
+      },
+      {
+        name: 'navigate',
+        description: 'Navigate the browser to a URL.',
+        input_schema: {
+          type: 'object',
+          properties: { url: { type: 'string' } },
+          required: ['url']
+        }
+      },
+      {
+        name: 'done',
+        description: 'Mark the task as complete. Call this when finished.',
+        input_schema: {
+          type: 'object',
+          properties: { summary: { type: 'string', description: 'What was accomplished' } },
+          required: ['summary']
+        }
+      }
+    ];
+
+    var cached = await chrome.storage.local.get(['soul_soul', 'soul_memory']);
+    var identity = cached.soul_soul || this.soul || 'You are SoulSearch, a browser automation agent.';
+    var system = identity + '\n\nYou are operating as a browser automation agent. ' +
+      'Use tools to complete the user\'s task step by step. ' +
+      'Start by calling snapshot_page to see what is on the page. ' +
+      'Be precise, efficient, and always call done() when finished.';
+
+    var messages = [{ role: 'user', content: task }];
+    var maxSteps = 12;
+
+    for (var step = 0; step < maxSteps; step++) {
+      var resp = await this._callAnthropicTools(system, messages, tools);
+
+      // Collect text and tool_use blocks
+      var textParts = [];
+      var toolCalls = [];
+      if (Array.isArray(resp.content)) {
+        resp.content.forEach(function(block) {
+          if (block.type === 'text' && block.text) textParts.push(block.text);
+          if (block.type === 'tool_use') toolCalls.push(block);
+        });
+      }
+
+      if (textParts.length && onStep) onStep({ type: 'thought', text: textParts.join(' ') });
+
+      // No tools called = model finished
+      if (toolCalls.length === 0 || resp.stop_reason === 'end_turn') {
+        var final = textParts.join(' ') || 'Done.';
+        if (onStep) onStep({ type: 'done', text: final });
+        return final;
+      }
+
+      messages.push({ role: 'assistant', content: resp.content });
+
+      var toolResults = [];
+      for (var i = 0; i < toolCalls.length; i++) {
+        var call = toolCalls[i];
+        var toolName = call.name;
+        var input = call.input || {};
+        if (onStep) onStep({ type: 'action', tool: toolName, input: input });
+
+        var result;
+        try {
+          if (toolName === 'done') {
+            if (onStep) onStep({ type: 'done', text: input.summary });
+            return input.summary;
+          } else if (toolName === 'snapshot_page') {
+            var snap = await this._tabMessage({ type: 'GET_SNAPSHOT' });
+            var lines = (snap.snapshot.elements || []).map(function(e) {
+              return '[' + e.id + '] ' + e.tag + (e.type ? '(' + e.type + ')' : '') + ': ' + (e.text || '(no label)');
+            });
+            result = 'Page: ' + snap.snapshot.title + '\n' + lines.join('\n');
+          } else if (toolName === 'click') {
+            var r = await this._tabMessage({ type: 'EXECUTE_ACTION', action: 'click', elementId: input.element_id });
+            result = r.error ? ('Error: ' + r.error) : JSON.stringify(r.result);
+          } else if (toolName === 'type_text') {
+            var r2 = await this._tabMessage({ type: 'EXECUTE_ACTION', action: 'type', elementId: input.element_id, value: input.text });
+            result = r2.error ? ('Error: ' + r2.error) : JSON.stringify(r2.result);
+          } else if (toolName === 'scroll') {
+            var r3 = await this._tabMessage({ type: 'EXECUTE_ACTION', action: 'scroll', value: input.direction });
+            result = 'Scrolled ' + input.direction;
+          } else if (toolName === 'read_page') {
+            var r4 = await this._tabMessage({ type: 'GET_CONTEXT' });
+            result = (r4.context && r4.context.text) ? r4.context.text.slice(0, 2000) : 'No content';
+          } else if (toolName === 'navigate') {
+            await this._tabMessage({ type: 'EXECUTE_ACTION', action: 'navigate', value: input.url });
+            result = 'Navigating to ' + input.url;
+          } else {
+            result = 'Unknown tool: ' + toolName;
+          }
+        } catch(e) {
+          result = 'Error: ' + e.message;
+        }
+
+        toolResults.push({ type: 'tool_result', tool_use_id: call.id, content: result });
+      }
+
+      messages.push({ role: 'user', content: toolResults });
+    }
+
+    return 'Max steps reached without completion.';
+  }
+
+  async _tabMessage(msg) {
+    var tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!tabs[0]) throw new Error('No active tab');
+    return new Promise(function(resolve, reject) {
+      chrome.tabs.sendMessage(tabs[0].id, msg, function(response) {
+        if (chrome.runtime.lastError) reject(new Error(chrome.runtime.lastError.message));
+        else resolve(response);
+      });
+    });
+  }
+
+  async _callAnthropicTools(system, messages, tools) {
+    var r = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'x-api-key': this.llmKey,
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-access': 'true',
+        'content-type': 'application/json'
+      },
+      body: JSON.stringify({
+        model: this.model || 'claude-3-5-haiku-20241022',
+        max_tokens: 2048,
+        system: system,
+        messages: messages,
+        tools: tools
+      })
+    });
+    if (!r.ok) {
+      var err = await r.json().catch(function() { return {}; });
+      throw new Error('Anthropic ' + r.status + ': ' + ((err.error && err.error.message) || r.statusText));
+    }
+    return r.json();
+  }
+
+
 }
