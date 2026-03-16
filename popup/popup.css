@@ -254,3 +254,19 @@ body {
 .ss-message--assistant br + br { display: none; }
 .ss-message--assistant ul, .ss-message--assistant ol { margin: 4px 0; }
 .ss-message--assistant h3, .ss-message--assistant h4 { margin-top: 8px; }
+
+/* Save to memory button on assistant messages */
+.ss-save-btn {
+  display: inline-block;
+  margin-top: 6px;
+  padding: 2px 8px;
+  font-size: 10px;
+  color: #6b7280;
+  background: transparent;
+  border: 1px solid #374151;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.ss-save-btn:hover { color: #a78bfa; border-color: #a78bfa; }
+.ss-save-btn:disabled { opacity: 0.4; cursor: default; }
