@@ -16,7 +16,16 @@ async function init() {
     api = new SoulSearchAPI(config);
 
     const ok = await api.ping();
-    setStatus(ok ? 'connected' : 'error', ok ? 'Memory active' : 'No API key — open Settings');
+    // Show soul identity source in status
+    if (ok) {
+      const check = await chrome.storage.local.get(['soul_soul', 'soul_memory']);
+      const hasSoul = !!(check.soul_soul && check.soul_soul.length > 10);
+      const hasMem  = !!(check.soul_memory && check.soul_memory.length > 10);
+      const tag = hasSoul ? ' · identity loaded' : ' · no identity (open Settings)';
+      setStatus('connected', 'Memory active' + (hasMem ? ' · mem ✓' : '') + tag);
+    } else {
+      setStatus('error', 'No API key — open Settings');
+    }
 
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     if (tab) {
