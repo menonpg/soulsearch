@@ -213,3 +213,44 @@ body {
 .ss-chat::-webkit-scrollbar { width: 4px; }
 .ss-chat::-webkit-scrollbar-track { background: transparent; }
 .ss-chat::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+/* ── Memory Panel ─────────────────────────────────────────── */
+.ss-memory-panel {
+  position: absolute;
+  top: 0; right: 0; bottom: 0;
+  width: 100%;
+  background: #1e1b2e;
+  border-left: 1px solid #3b3262;
+  display: flex;
+  flex-direction: column;
+  z-index: 100;
+  overflow: hidden;
+}
+.ss-memory-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  background: #2d2b42;
+  border-bottom: 1px solid #3b3262;
+  font-size: 13px;
+  font-weight: 600;
+  color: #a78bfa;
+  flex-shrink: 0;
+}
+.ss-memory-panel-actions { display: flex; gap: 6px; }
+.ss-btn--small { font-size: 13px; padding: 2px 6px; }
+.ss-memory-panel-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: #c4b5fd;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+/* Fix excessive spacing in markdown output */
+.ss-message--assistant br + br { display: none; }
+.ss-message--assistant ul, .ss-message--assistant ol { margin: 4px 0; }
+.ss-message--assistant h3, .ss-message--assistant h4 { margin-top: 8px; }
