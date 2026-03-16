@@ -109,44 +109,28 @@ async function sendMessage() {
 // ── Markdown renderer ─────────────────────────────────────────────────────────
 
 function renderMarkdown(raw) {
-  // Escape HTML first
   let s = raw
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;');
 
-  // Bold and italic (do before other replacements)
-  s = s.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-  s = s.replace(/\*(.+?)\*/g, '<em>$1</em>');
-
-  // Inline code
-  s = s.replace(/`([^`]+)`/g, '<code>$1</code>');
-
-  // Headers
-  s = s.replace(/^### (.+)$/gm, '<h4 style="margin:6px 0 2px;color:#a78bfa;font-size:12px">$1</h4>');
-  s = s.replace(/^## (.+)$/gm,  '<h3 style="margin:8px 0 3px;color:#818cf8;font-size:13px">$1</h3>');
-  s = s.replace(/^# (.+)$/gm,   '<h3 style="margin:8px 0 3px;color:#818cf8;font-size:14px">$1</h3>');
-
-  // Bullet lists — collect consecutive li lines
-  s = s.replace(/(^[-*] .+$(\n|$))+/gm, function(block) {
-    const items = block.trim().split('\n')
-      .map(l => '<li>' + l.replace(/^[-*] /, '') + '</li>')
-      .join('');
-    return '<ul style="margin:4px 0;padding-left:18px">' + items + '</ul>';
+  s = s.replace(/[*][*](.+?)[*][*]/g, '<strong>$1</strong>');
+  s = s.replace(/[*](.+?)[*]/g, '<em>$1</em>');
+  s = s.replace(/^[#]{3} (.+)$/gm, '<h4 style="margin:6px 0 2px;color:#a78bfa">$1</h4>');
+  s = s.replace(/^[#]{2} (.+)$/gm, '<h3 style="margin:8px 0 3px;color:#818cf8">$1</h3>');
+  s = s.replace(/^[#] (.+)$/gm,    '<h3 style="margin:8px 0 3px;color:#818cf8">$1</h3>');
+  s = s.replace(/^[-] (.+)$/gm, '<li>$1</li>');
+  s = s.replace(/^[*] (.+)$/gm, '<li>$1</li>');
+  s = s.replace(/(<li>.*<[/]li>
+?)+/g, function(m) {
+    return '<ul style="margin:4px 0;padding-left:18px">' + m + '</ul>';
   });
+  s = s.replace(/^\d+[.] (.+)$/gm, '<li>$1</li>');
+  s = s.replace(/
 
-  // Numbered lists
-  s = s.replace(/(^\d+\. .+$(\n|$))+/gm, function(block) {
-    const items = block.trim().split('\n')
-      .map(l => '<li>' + l.replace(/^\d+\. /, '') + '</li>')
-      .join('');
-    return '<ol style="margin:4px 0;padding-left:18px">' + items + '</ol>';
-  });
-
-  // Paragraphs
-  s = s.replace(/\n\n/g, '<br><br>');
-  s = s.replace(/\n/g, '<br>');
-
+/g, '<br><br>');
+  s = s.replace(/
+/g, '<br>');
   return s;
 }
 
