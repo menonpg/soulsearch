@@ -1,4 +1,4 @@
-// SoulSearch popup — main UI controller
+// SoulSearch popup - main UI controller
 import { SoulSearchAPI } from '../api/soul-api.js';
 
 const $ = id => document.getElementById(id);
@@ -8,38 +8,35 @@ let includeContext = true;
 let api = null;
 let chatHistory = [];
 
-// ── Init ─────────────────────────────────────────────────────────────────────
-
 async function init() {
   try {
     const config = await loadConfig();
     api = new SoulSearchAPI(config);
 
     const ok = await api.ping();
-    // Show soul identity source in status
     if (ok) {
       const check = await chrome.storage.local.get(['soul_soul', 'soul_memory']);
       const hasSoul = !!(check.soul_soul && check.soul_soul.length > 10);
       const hasMem  = !!(check.soul_memory && check.soul_memory.length > 10);
-      const tag = hasSoul ? ' · identity loaded' : ' · no identity (open Settings)';
-      setStatus('connected', 'Memory active' + (hasMem ? ' · mem ✓' : '') + tag);
+      const tag = hasSoul ? ' \u00b7 identity loaded' : ' \u00b7 no identity (Settings)';
+      setStatus('connected', 'Memory active' + (hasMem ? ' \u00b7 mem \u2713' : '') + tag);
     } else {
-      setStatus('error', 'No API key — open Settings');
+      setStatus('error', 'No API key \u2014 open Settings');
     }
 
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     if (tab) {
-      $('ss-page-title').textContent = tab.title || tab.url || '—';
+      $('ss-page-title').textContent = tab.title || tab.url || '\u2014';
       try {
         const resp = await chrome.tabs.sendMessage(tab.id, { type: 'GET_CONTEXT' });
-        if (resp?.context) pageContext = resp.context;
+        if (resp && resp.context) pageContext = resp.context;
       } catch (e) { /* content script not on this page */ }
     }
 
     const stored = await chrome.storage.local.get('chatHistory');
-    if (stored.chatHistory?.length) {
+    if (stored.chatHistory && stored.chatHistory.length) {
       chatHistory = stored.chatHistory.slice(-20);
-      chatHistory.forEach(m => appendMessage(m.role, m.content));
+      chatHistory.forEach(function(m) { appendMessage(m.role, m.content); });
     }
 
     if (ok) {
@@ -57,48 +54,57 @@ async function init() {
   }
 }
 
-// ── Event listeners ───────────────────────────────────────────────────────────
-
 $('ss-send-btn').addEventListener('click', sendMessage);
-$('ss-input').addEventListener('keydown', e => {
+$('ss-input').addEventListener('keydown', function(e) {
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
 });
-$('ss-ctx-btn').addEventListener('click', () => {
+$('ss-ctx-btn').addEventListener('click', function() {
   includeContext = !includeContext;
   $('ss-ctx-btn').style.opacity = includeContext ? '1' : '0.4';
 });
-$('ss-mem-btn').addEventListener('click', () => {
-  const peek = $('ss-memory-peek');
+$('ss-mem-btn').addEventListener('click', function() {
+  var peek = $('ss-memory-peek');
   peek.style.display = peek.style.display === 'none' ? 'block' : 'none';
 });
-$('ss-settings-link').addEventListener('click', e => {
+$('ss-settings-link').addEventListener('click', function(e) {
   e.preventDefault();
   showSettings();
 });
-$('cfg-cancel').addEventListener('click', () => {
+$('cfg-cancel').addEventListener('click', function() {
   $('ss-settings').style.display = 'none';
 });
 $('cfg-save').addEventListener('click', saveSettings);
 
-// ── Send message ──────────────────────────────────────────────────────────────
-
 async function sendMessage() {
-  const input = $('ss-input');
-  const query = input.value.trim();
+  var input = $('ss-input');
+  var query = input.value.trim();
   if (!query) return;
 
   input.value = '';
   appendMessage('user', query);
   chatHistory.push({ role: 'user', content: query });
 
-  const loadingEl = appendMessage('loading', '⏳ Thinking…');
+  var loadingEl = appendMessage('loading', '\u23f3 Thinking\u2026');
 
   try {
-    const context = includeContext && pageContext
-      ? '[Page: ' + pageContext.title + ']\n' + (pageContext.text || '').slice(0, 3000)
-      : null;
+    try {
+      var tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (tabs[0]) {
+        var fresh = await chrome.tabs.sendMessage(tabs[0].id, { type: 'GET_CONTEXT' });
+        if (fresh && fresh.context && fresh.context.text &&
+            fresh.context.text.length > ((pageContext && pageContext.text) ? pageContext.text.length : 0)) {
+          pageContext = fresh.context;
+        }
+      }
+    } catch(e) { /* keep existing context */ }
 
-    const response = await api.ask(query, context, chatHistory.slice(-10));
+    var context = null;
+    if (includeContext && pageContext) {
+      context = '[Page: ' + pageContext.title + ']' +
+        (pageContext.text ? ('\n' + pageContext.text.slice(0, 4000)) : '');
+    }
+
+    var response = await api.ask(query, context, chatHistory.slice(-10));
     loadingEl.remove();
     appendMessage('assistant', response.answer);
     chatHistory.push({ role: 'assistant', content: response.answer });
@@ -115,10 +121,8 @@ async function sendMessage() {
   }
 }
 
-// ── Markdown renderer ─────────────────────────────────────────────────────────
-
 function renderMarkdown(raw) {
-  let s = raw
+  var s = raw
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;');
@@ -128,26 +132,28 @@ function renderMarkdown(raw) {
   s = s.replace(/^[#]{3} (.+)$/gm, '<h4 style="margin:6px 0 2px;color:#a78bfa">$1</h4>');
   s = s.replace(/^[#]{2} (.+)$/gm, '<h3 style="margin:8px 0 3px;color:#818cf8">$1</h3>');
   s = s.replace(/^[#] (.+)$/gm,    '<h3 style="margin:8px 0 3px;color:#818cf8">$1</h3>');
-  s = s.replace(/^[-] (.+)$/gm, '<li>$1</li>');
-  s = s.replace(/^[*] (.+)$/gm, '<li>$1</li>');
-  s = s.replace(/(<li>.*<[/]li>
-?)+/g, function(m) {
-    return '<ul style="margin:4px 0;padding-left:18px">' + m + '</ul>';
-  });
-  s = s.replace(/^\d+[.] (.+)$/gm, '<li>$1</li>');
-  s = s.replace(/
+  s = s.replace(/^[-*] (.+)$/gm, '<li>$1</li>');
+  s = s.replace(/^[0-9]+[.] (.+)$/gm, '<li>$1</li>');
 
-/g, '<br><br>');
-  s = s.replace(/
-/g, '<br>');
+  // Wrap consecutive <li> in <ul> - use String.fromCharCode to avoid \n in source
+  var LF = String.fromCharCode(10);
+  var sections = s.split(LF + LF);
+  s = sections.map(function(sec) {
+    var trimmed = sec.trim();
+    if (trimmed.indexOf('<li>') === 0) {
+      return '<ul style="margin:4px 0;padding-left:18px">' +
+        trimmed.split(LF).join('') + '</ul>';
+    }
+    return sec;
+  }).join('<br><br>');
+
+  s = s.split(LF).join('<br>');
   return s;
 }
 
-// ── UI helpers ────────────────────────────────────────────────────────────────
-
 function appendMessage(role, content) {
-  const chat = $('ss-chat');
-  const el = document.createElement('div');
+  var chat = $('ss-chat');
+  var el = document.createElement('div');
   el.className = 'ss-message ss-message--' + role;
   if (role === 'assistant') {
     el.innerHTML = renderMarkdown(content);
@@ -164,10 +170,8 @@ function setStatus(state, text) {
   $('ss-status-text').textContent = text;
 }
 
-// ── Settings ──────────────────────────────────────────────────────────────────
-
 async function loadConfig() {
-  const defaults = {
+  var defaults = {
     provider: 'anthropic',
     llmKey: '',
     model: 'claude-3-haiku-20240307',
@@ -179,23 +183,22 @@ async function loadConfig() {
     gitToken: '',
   };
   try {
-    const local = await chrome.storage.local.get(defaults);
-    // Migrate from old sync storage
+    var local = await chrome.storage.local.get(defaults);
     try {
-      const sync = await chrome.storage.sync.get(['llmKey', 'provider']);
+      var sync = await chrome.storage.sync.get(['llmKey', 'provider']);
       if (sync.llmKey && !local.llmKey) {
         local.llmKey = sync.llmKey;
         await chrome.storage.local.set({ llmKey: sync.llmKey });
       }
     } catch (e) { /* sync unavailable */ }
-    return { ...defaults, ...local };
+    return Object.assign({}, defaults, local);
   } catch (e) {
     return defaults;
   }
 }
 
 async function showSettings() {
-  const config = await loadConfig();
+  var config = await loadConfig();
   $('cfg-provider').value     = config.provider;
   $('cfg-llm-key').value      = config.llmKey;
   $('cfg-model').value        = config.model;
@@ -209,27 +212,37 @@ async function showSettings() {
 }
 
 async function saveSettings() {
-  const gitOwner    = $('cfg-git-owner').value.trim();
-  const gitRepo     = $('cfg-git-repo').value.trim();
-  const gitBranch   = $('cfg-git-branch').value.trim() || 'main';
-  const gitToken    = $('cfg-git-token').value.trim();
-  const gitProvider = $('cfg-git-provider').value;
+  var gitOwner    = $('cfg-git-owner').value.trim();
+  var gitRepo     = $('cfg-git-repo').value.trim();
+  var gitBranch   = $('cfg-git-branch').value.trim() || 'main';
+  var gitToken    = $('cfg-git-token').value.trim();
+  var gitProvider = $('cfg-git-provider').value;
 
   await chrome.storage.local.set({
     provider:    $('cfg-provider').value,
     llmKey:      $('cfg-llm-key').value.trim(),
     model:       $('cfg-model').value.trim() || 'claude-3-haiku-20240307',
     soul:        $('cfg-soul').value.trim(),
-    gitProvider, gitOwner, gitRepo, gitBranch, gitToken,
+    gitProvider: gitProvider,
+    gitOwner:    gitOwner,
+    gitRepo:     gitRepo,
+    gitBranch:   gitBranch,
+    gitToken:    gitToken,
   });
 
   if (gitOwner && gitRepo && gitToken) {
-    const statusEl = $('cfg-git-status');
+    var statusEl = $('cfg-git-status');
     statusEl.className = 'ss-git-status info';
     statusEl.textContent = '\u23f3 Syncing memory from Git\u2026';
     try {
-      const { loadMemoryFromGit } = await import('../api/git-storage.js');
-      await loadMemoryFromGit({ gitProvider, gitOwner, gitRepo, gitBranch, gitToken });
+      var mod = await import('../api/git-storage.js');
+      await mod.loadMemoryFromGit({
+        gitProvider: gitProvider,
+        gitOwner: gitOwner,
+        gitRepo: gitRepo,
+        gitBranch: gitBranch,
+        gitToken: gitToken
+      });
       statusEl.className = 'ss-git-status ok';
       statusEl.textContent = '\u2705 Memory synced from Git';
     } catch (e) {
