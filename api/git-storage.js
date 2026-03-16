@@ -33,7 +33,15 @@ async function getFile(provider, owner, repo, branch, token, path) {
   const data = await r.json();
   // GitHub/Gitea: base64 content field. GitLab: content field
   const raw = data.content || data.content;
-  return atob(raw.replace(/\s/g, ''));
+  // Properly decode UTF-8 from base64 (atob alone mangles multi-byte chars)
+  var binary = atob(raw.replace(/\s/g, ''));
+  try {
+    var bytes = new Uint8Array(binary.length);
+    for (var i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return new TextDecoder('utf-8').decode(bytes);
+  } catch(e) {
+    return binary; // fallback
+  }
 }
 
 async function putFile(provider, owner, repo, branch, token, path, content, existingSha = null) {
@@ -42,7 +50,11 @@ async function putFile(provider, owner, repo, branch, token, path, content, exis
     ? `${base}/files/${encodeURIComponent(path)}`
     : `${base}/${path}`;
 
-  const encoded = btoa(unescape(encodeURIComponent(content)));
+  // UTF-8 safe base64 encode
+  var bytes = new TextEncoder().encode(content);
+  var binary = '';
+  bytes.forEach(function(b) { binary += String.fromCharCode(b); });
+  var encoded = btoa(binary);
   const body = {
     message: `memory: update ${path} via SoulSearch`,
     content: encoded,
