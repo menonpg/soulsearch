@@ -132,6 +132,7 @@ async function loadConfig() {
   const defaults = {
     provider: 'anthropic',
     llmKey: '',
+    model: 'claude-3-5-sonnet-20241022',
     soul: '',
     gitProvider: 'github',
     gitOwner: '',
@@ -147,6 +148,7 @@ async function showSettings() {
   const config = await loadConfig();
   $('cfg-provider').value   = config.provider;
   $('cfg-llm-key').value    = config.llmKey;
+  $('cfg-model').value      = config.model;
   $('cfg-git-provider').value = config.gitProvider;
   $('cfg-git-owner').value  = config.gitOwner;
   $('cfg-git-repo').value   = config.gitRepo;
@@ -166,6 +168,7 @@ async function saveSettings() {
   await chrome.storage.local.set({
     provider:    $('cfg-provider').value,
     llmKey:      $('cfg-llm-key').value.trim(),
+    model:       $('cfg-model').value.trim() || 'claude-3-5-sonnet-20241022',
     soul:        $('cfg-soul').value.trim(),
     gitProvider, gitOwner, gitRepo, gitBranch, gitToken,
   });
