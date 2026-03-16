@@ -24,13 +24,13 @@ async function init() {
       setStatus('error', 'No API key \u2014 open Settings');
     }
 
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    if (tab) {
-      $('ss-page-title').textContent = tab.title || tab.url || '\u2014';
-      try {
-        const resp = await chrome.tabs.sendMessage(tab.id, { type: 'GET_CONTEXT' });
-        if (resp && resp.context) pageContext = resp.context;
-      } catch (e) { /* content script not on this page */ }
+    var initCtx = await getPageText();
+    if (initCtx) {
+      pageContext = initCtx;
+      $('ss-page-title').textContent = initCtx.title || initCtx.url || '-';
+    } else {
+      var initTabs = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (initTabs[0]) $('ss-page-title').textContent = initTabs[0].title || '-';
     }
 
     const stored = await chrome.storage.local.get('chatHistory');
@@ -75,6 +75,43 @@ $('cfg-cancel').addEventListener('click', function() {
 });
 $('cfg-save').addEventListener('click', saveSettings);
 
+
+async function getPageText() {
+  try {
+    var tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!tabs[0]) return null;
+    var tab = tabs[0];
+    // Use executeScript for reliable text extraction on any page
+    var results = await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      func: function() {
+        // Remove clutter elements
+        var skip = document.querySelectorAll('script,style,nav,header,footer,aside,noscript,iframe');
+        var texts = [];
+        skip.forEach(function(el) { el.remove(); });
+        var text = (document.body.innerText || document.body.textContent || '').trim();
+        return {
+          url: location.href,
+          title: document.title,
+          text: text.replace(/[\t ]{3,}/g, ' ').replace(/\n{4,}/g, '\n\n').slice(0, 8000),
+          metaDesc: (document.querySelector('meta[name="description"]') || {}).content || null
+        };
+      }
+    });
+    if (results && results[0] && results[0].result) return results[0].result;
+  } catch(e) {
+    // Fallback to content script message
+    try {
+      var tabs2 = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (tabs2[0]) {
+        var resp = await chrome.tabs.sendMessage(tabs2[0].id, { type: 'GET_CONTEXT' });
+        if (resp && resp.context) return resp.context;
+      }
+    } catch(e2) { /* page not accessible */ }
+  }
+  return null;
+}
+
 async function sendMessage() {
   var input = $('ss-input');
   var query = input.value.trim();
@@ -87,21 +124,17 @@ async function sendMessage() {
   var loadingEl = appendMessage('loading', '\u23f3 Thinking\u2026');
 
   try {
-    try {
-      var tabs = await chrome.tabs.query({ active: true, currentWindow: true });
-      if (tabs[0]) {
-        var fresh = await chrome.tabs.sendMessage(tabs[0].id, { type: 'GET_CONTEXT' });
-        if (fresh && fresh.context && fresh.context.text &&
-            fresh.context.text.length > ((pageContext && pageContext.text) ? pageContext.text.length : 0)) {
-          pageContext = fresh.context;
-        }
-      }
-    } catch(e) { /* keep existing context */ }
+    // Get page text via executeScript - works on any page regardless of load state
+    var freshContext = await getPageText();
+    if (freshContext && freshContext.text && freshContext.text.length > 100) {
+      pageContext = freshContext;
+    }
 
     var context = null;
-    if (includeContext && pageContext) {
-      context = '[Page: ' + pageContext.title + ']' +
-        (pageContext.text ? ('\n' + pageContext.text.slice(0, 4000)) : '');
+    if (includeContext && pageContext && pageContext.text) {
+      context = '[Page URL: ' + (pageContext.url || '') + ']\n' +
+                '[Page Title: ' + pageContext.title + ']\n\n' +
+                pageContext.text.slice(0, 5000);
     }
 
     var response = await api.ask(query, context, chatHistory.slice(-10));
