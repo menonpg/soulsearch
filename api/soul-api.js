@@ -258,9 +258,15 @@ export class SoulSearchAPI {
     var messages = [{ role: 'user', content: task }];
     var maxSteps = 12;
 
+    if (onStep) onStep({ type: 'thought', text: '[SoulSearch Agent] starting -- model: claude-3-5-haiku-20241022' });
+    console.log('[SoulSearch Agent] starting, key length:', this.llmKey ? this.llmKey.length : 0);
+
     for (var step = 0; step < maxSteps; step++) {
       var tc = (step === 0) ? { type: 'tool', name: 'snapshot_page' } : { type: 'auto' };
+      if (onStep) onStep({ type: 'thought', text: '[Step ' + (step+1) + '] calling Anthropic...' });
+      console.log('[SoulSearch Agent] step', step, 'tool_choice:', JSON.stringify(tc));
       var resp = await this._callAnthropicTools(system, messages, tools, tc);
+      console.log('[SoulSearch Agent] step', step, 'stop_reason:', resp.stop_reason, 'content blocks:', resp.content ? resp.content.length : 0);
 
       // Collect text and tool_use blocks
       var textParts = [];
@@ -324,6 +330,8 @@ export class SoulSearchAPI {
           }
         } catch(e) {
           result = 'Error: ' + e.message;
+          console.error('[SoulSearch Agent] tool error:', toolName, e);
+          if (onStep) onStep({ type: 'thought', text: '[Error] ' + toolName + ': ' + e.message });
         }
 
         toolResults.push({ type: 'tool_result', tool_use_id: call.id, content: result });
