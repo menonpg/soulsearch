@@ -1,6 +1,6 @@
 // SoulSearch Git Storage
 // Reads/writes SOUL.md and MEMORY.md from any compatible Git host.
-// Results cached in chrome.storage.local — no network call on every query.
+// Results cached in chrome.storage.local - no network call on every query.
 
 function apiBase(provider, owner, repo) {
   switch (provider) {
@@ -74,7 +74,7 @@ async function getFileSha(provider, owner, repo, branch, token, path) {
   } catch { return null; }
 }
 
-// ── Public API ────────────────────────────────────────────────────────────────
+// -- Public API ----------------------------------------------------------------
 
 export async function loadMemoryFromGit({ gitProvider, gitOwner, gitRepo, gitBranch, gitToken }) {
   const soul   = await getFile(gitProvider, gitOwner, gitRepo, gitBranch, gitToken, 'SOUL.md');
@@ -90,13 +90,19 @@ export async function loadMemoryFromGit({ gitProvider, gitOwner, gitRepo, gitBra
   return { soul, memory };
 }
 
-export async function saveMemoryToGit({ gitProvider, gitOwner, gitRepo, gitBranch, gitToken }, newEntry) {
-  // Append entry to MEMORY.md in the git repo
-  const existing = await getFile(gitProvider, gitOwner, gitRepo, gitBranch, gitToken, 'MEMORY.md') || '';
+export async function saveMemoryToGit({ gitProvider, gitOwner, gitRepo, gitBranch, gitToken }, newEntry, fullContent) {
   const sha = await getFileSha(gitProvider, gitOwner, gitRepo, gitBranch, gitToken, 'MEMORY.md');
-  const updated = existing + `\n\n---\n${newEntry}`;
-  await putFile(gitProvider, gitOwner, gitRepo, gitBranch, gitToken, 'MEMORY.md', updated, sha);
-
-  // Update local cache too
-  await chrome.storage.local.set({ soul_memory: updated });
+  let content;
+  if (fullContent !== undefined && fullContent !== null) {
+    // Push full local memory as-is
+    content = fullContent;
+  } else if (newEntry) {
+    // Append a new entry to existing file
+    const existing = await getFile(gitProvider, gitOwner, gitRepo, gitBranch, gitToken, 'MEMORY.md') || '';
+    content = existing + '\n\n---\n' + newEntry;
+  } else {
+    return; // nothing to save
+  }
+  await putFile(gitProvider, gitOwner, gitRepo, gitBranch, gitToken, 'MEMORY.md', content, sha);
+  await chrome.storage.local.set({ soul_memory: content });
 }
