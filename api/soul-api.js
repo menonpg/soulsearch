@@ -7,7 +7,7 @@ export class SoulSearchAPI {
     this.provider = config.provider || 'anthropic';
     this.llmKey   = config.llmKey   || '';
     this.soul     = config.soul     || 'I am a research assistant with persistent memory. I help you understand and research web content.';
-    this.model    = config.model    || 'claude-3-5-sonnet-20241022';
+    this.model    = config.model    || 'claude-3-haiku-20240307';
     // SoulMate API optional — only used if explicitly configured with a key
     this.apiUrl   = config.apiUrl?.replace(/\/$/, '') || '';
     this.apiKey   = config.apiKey   || '';
@@ -64,7 +64,7 @@ export class SoulSearchAPI {
         'anthropic-dangerous-direct-browser-access': 'true'
       },
       body: JSON.stringify({
-        model: this.model || 'claude-3-5-sonnet-20241022',
+        model: this.model || 'claude-3-haiku-20240307',
         max_tokens: 1024,
         system,
         messages
