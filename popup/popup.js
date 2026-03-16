@@ -130,36 +130,64 @@ function setStatus(state, text) {
 
 async function loadConfig() {
   const defaults = {
-    apiUrl: 'https://soulmate-api-production.up.railway.app',
-    apiKey: '',
     provider: 'anthropic',
     llmKey: '',
-    soul: 'I am a research assistant with persistent memory. I help you understand and research web content.'
+    soul: '',
+    gitProvider: 'github',
+    gitOwner: '',
+    gitRepo: '',
+    gitBranch: 'main',
+    gitToken: '',
   };
-  const stored = await chrome.storage.sync.get(defaults);
+  const stored = await chrome.storage.local.get(defaults);
   return { ...defaults, ...stored };
 }
 
 async function showSettings() {
   const config = await loadConfig();
-  $('cfg-api-url').value = config.apiUrl;
-  $('cfg-api-key').value = config.apiKey;
-  $('cfg-provider').value = config.provider;
-  $('cfg-llm-key').value = config.llmKey;
-  $('cfg-soul').value = config.soul;
+  $('cfg-provider').value   = config.provider;
+  $('cfg-llm-key').value    = config.llmKey;
+  $('cfg-git-provider').value = config.gitProvider;
+  $('cfg-git-owner').value  = config.gitOwner;
+  $('cfg-git-repo').value   = config.gitRepo;
+  $('cfg-git-branch').value = config.gitBranch || 'main';
+  $('cfg-git-token').value  = config.gitToken;
+  $('cfg-soul').value       = config.soul;
   $('ss-settings').style.display = 'block';
 }
 
 async function saveSettings() {
-  await chrome.storage.sync.set({
-    apiUrl: $('cfg-api-url').value,
-    apiKey: $('cfg-api-key').value,
-    provider: $('cfg-provider').value,
-    llmKey: $('cfg-llm-key').value,
-    soul: $('cfg-soul').value
+  const gitOwner  = $('cfg-git-owner').value.trim();
+  const gitRepo   = $('cfg-git-repo').value.trim();
+  const gitBranch = $('cfg-git-branch').value.trim() || 'main';
+  const gitToken  = $('cfg-git-token').value.trim();
+  const gitProvider = $('cfg-git-provider').value;
+
+  await chrome.storage.local.set({
+    provider:    $('cfg-provider').value,
+    llmKey:      $('cfg-llm-key').value.trim(),
+    soul:        $('cfg-soul').value.trim(),
+    gitProvider, gitOwner, gitRepo, gitBranch, gitToken,
   });
+
+  // If Git config is present, pull SOUL.md + MEMORY.md now
+  if (gitOwner && gitRepo && gitToken) {
+    const statusEl = $('cfg-git-status');
+    statusEl.className = 'ss-git-status info';
+    statusEl.textContent = '⏳ Syncing memory from Git…';
+    try {
+      const { loadMemoryFromGit } = await import('../api/git-storage.js');
+      await loadMemoryFromGit({ gitProvider, gitOwner, gitRepo, gitBranch, gitToken });
+      statusEl.className = 'ss-git-status ok';
+      statusEl.textContent = '✅ Memory synced from Git';
+    } catch (e) {
+      statusEl.className = 'ss-git-status err';
+      statusEl.textContent = `❌ Git sync failed: ${e.message}`;
+      console.error('Git sync error:', e);
+    }
+  }
+
   $('ss-settings').style.display = 'none';
-  // Re-init with new config
   init();
 }
 
