@@ -110,11 +110,51 @@ async function sendMessage() {
 
 // ── UI helpers ────────────────────────────────────────────────────────────────
 
+function renderMarkdown(text) {
+  let s = text
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  // fenced code blocks
+  s = s.replace(/```[\s\S]*?```/g, m => `<pre><code>${m.slice(3,-3).replace(/^\w+
+/,'')}</code></pre>`);
+  // inline code
+  s = s.replace(/`([^`
+]+)`/g, '<code>$1</code>');
+  // bold / italic
+  s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+  s = s.replace(/\*([^*
+]+)\*/g, '<em>$1</em>');
+  // headers
+  s = s.replace(/^### (.+)$/gm, '<h4 style="margin:6px 0 2px;color:#a78bfa">$1</h4>');
+  s = s.replace(/^## (.+)$/gm,  '<h3 style="margin:8px 0 2px;color:#818cf8">$1</h3>');
+  s = s.replace(/^# (.+)$/gm,   '<h3 style="margin:8px 0 2px;color:#818cf8">$1</h3>');
+  // numbered lists
+  s = s.replace(/^(\d+\. .+)(
+\d+\. .+)*/gm, m =>
+    '<ol style="margin:4px 0;padding-left:18px">' +
+    m.split('
+').map(l => `<li>${l.replace(/^\d+\.\s*/,'')}</li>`).join('') + '</ol>');
+  // bullet lists
+  s = s.replace(/^[-*] (.+)$/gm, '<li>$1</li>');
+  s = s.replace(/(<li>[\s\S]+?<\/li>
+?)+/g, m =>
+    `<ul style="margin:4px 0;padding-left:18px">${m}</ul>`);
+  // paragraphs
+  s = s.replace(/
+
+/g, '<br><br>').replace(/
+/g, '<br>');
+  return s;
+}
+
 function appendMessage(role, content) {
   const chat = $('ss-chat');
   const el = document.createElement('div');
   el.className = `ss-message ss-message--${role}`;
-  el.textContent = content;
+  if (role === 'assistant') {
+    el.innerHTML = renderMarkdown(content);
+  } else {
+    el.textContent = content;
+  }
   chat.appendChild(el);
   chat.scrollTop = chat.scrollHeight;
   return el;
