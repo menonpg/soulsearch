@@ -98,7 +98,7 @@ async function getPageText() {
     var results = await chrome.scripting.executeScript({
       target: { tabId: tab.id },
       func: function() {
-        // innerText already skips script/style/hidden — DO NOT modify the DOM
+        // innerText already skips script/style/hidden - DO NOT modify the DOM
         var text = (document.body.innerText || document.body.textContent || '').trim();
         var metaEl = document.querySelector('meta[name="description"]');
         return {
