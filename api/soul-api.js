@@ -27,7 +27,11 @@ export class SoulSearchAPI {
 
     // Build system prompt: soul → page context (primary) → memory (background)
     const cached = await chrome.storage.local.get(['soul_memory', 'soul_soul']);
-    const soulIdentity = cached.soul_soul || this.soul;
+    const defaultSoul = 'You are SoulSearch, a helpful AI research assistant embedded in the browser. ' +
+      'You have access to the current page content and the user\'s personal memory. ' +
+      'When asked about the current page, answer from the page content. ' +
+      'Be concise, insightful, and cite specific details from the page when relevant.';
+    const soulIdentity = cached.soul_soul || this.soul || defaultSoul;
 
     let systemParts = [soulIdentity];
 
