@@ -1,12 +1,20 @@
-// SoulSearch popup - main UI controller
+// SoulSearch popup -- v2 with sessions, memory panel, agent mode
 import { SoulSearchAPI } from '../api/soul-api.js';
 
 const $ = id => document.getElementById(id);
 
-let pageContext = null;
-let includeContext = true;
 let api = null;
 let chatHistory = [];
+let pageContext = null;
+let includeContext = true;
+let agentMode = false;
+
+const SESSION_KEY = 'ss_sessions';
+const CURRENT_KEY = 'ss_current';
+
+// ============================================================
+// INIT
+// ============================================================
 
 async function init() {
   try {
@@ -20,39 +28,57 @@ async function init() {
       const hasMem  = !!(check.soul_memory && check.soul_memory.length > 10);
       const tag = hasSoul ? ' \u00b7 identity loaded' : ' \u00b7 no identity (Settings)';
       setStatus('connected', 'Memory active' + (hasMem ? ' \u00b7 mem \u2713' : '') + tag);
+      if (hasMem) $('ss-memory-text').textContent = check.soul_memory;
     } else {
-      setStatus('error', 'No API key \u2014 open Settings');
+      setStatus('error', 'No API key -- open Settings');
     }
 
-    var initCtx = await getPageText();
-    if (initCtx) {
-      pageContext = initCtx;
-      $('ss-page-title').textContent = initCtx.title || initCtx.url || '-';
+    // Get page context
+    const ctx = await getPageText();
+    if (ctx) {
+      pageContext = ctx;
+      $('ss-page-title').textContent = ctx.title || ctx.url || '--';
     } else {
-      var initTabs = await chrome.tabs.query({ active: true, currentWindow: true });
-      if (initTabs[0]) $('ss-page-title').textContent = initTabs[0].title || '-';
+      const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (tabs[0]) $('ss-page-title').textContent = tabs[0].title || '--';
     }
 
-    const stored = await chrome.storage.local.get('chatHistory');
-    if (stored.chatHistory && stored.chatHistory.length) {
-      chatHistory = stored.chatHistory.slice(-20);
-      chatHistory.forEach(function(m) { appendMessage(m.role, m.content); });
+    // Load sessions
+    const { sessions, currentId } = await loadSessions();
+    renderSessionSelect(sessions, currentId);
+    const sess = sessions[currentId];
+    if (sess && sess.history && sess.history.length) {
+      chatHistory = sess.history.slice(-20);
+      const chat = $('ss-chat');
+      chat.innerHTML = '<div class="ss-message ss-message--system">Ask me anything about this page, or start a research thread. I remember everything.</div>';
+      chatHistory.forEach(m => appendMessage(m.role, m.content));
     }
 
-    if (ok) {
-      try {
-        const memory = await api.getMemoryPeek();
-        if (memory) {
-          // memory panel stays hidden until user clicks brain button
-          $('ss-memory-text').textContent = memory;
-        }
-      } catch (e) { /* optional */ }
+    // Handle pending context-menu action
+    const pending = await chrome.storage.local.get('pendingAction');
+    if (pending.pendingAction && (Date.now() - pending.pendingAction.timestamp < 5000)) {
+      const action = pending.pendingAction;
+      await chrome.storage.local.remove('pendingAction');
+      if (action.type === 'soulsearch-save' && action.text) {
+        await saveToMemory(action.text, action.url);
+        appendMessage('system', 'Saved to memory: "' + action.text.slice(0, 80) + '..."');
+      } else if (action.type === 'soulsearch-ask' && action.text) {
+        $('ss-input').value = action.text;
+        sendMessage();
+      } else if (action.type === 'soulsearch-page') {
+        $('ss-input').value = 'Summarize this page for me.';
+        sendMessage();
+      }
     }
   } catch (e) {
     console.error('SoulSearch init error:', e);
     setStatus('error', 'Error: ' + e.message);
   }
 }
+
+// ============================================================
+// EVENT LISTENERS
+// ============================================================
 
 $('ss-send-btn').addEventListener('click', sendMessage);
 $('ss-input').addEventListener('keydown', function(e) {
@@ -63,18 +89,39 @@ $('ss-ctx-btn').addEventListener('click', function() {
   $('ss-ctx-btn').style.opacity = includeContext ? '1' : '0.4';
 });
 $('ss-mem-btn').addEventListener('click', function() {
-  var panel = $('ss-memory-peek');
+  const panel = $('ss-memory-peek');
   panel.style.display = panel.style.display === 'none' ? 'flex' : 'none';
 });
-$('ss-mem-close').addEventListener('click', function() {
-  $('ss-memory-peek').style.display = 'none';
+$('ss-agent-btn').addEventListener('click', function() {
+  agentMode = !agentMode;
+  $('ss-agent-btn').style.outline = agentMode ? '2px solid #a78bfa' : 'none';
+  $('ss-send-btn').textContent = agentMode ? 'Run' : 'Ask ->';
+  if (agentMode) appendMessage('system', 'Agent mode ON. Describe a task and I will act on this page.');
 });
-$('ss-mem-push').addEventListener('click', pushMemoryToGit);
-$('ss-mem-reset').addEventListener('click', function() { showVersionPicker(); });
 $('ss-settings-link').addEventListener('click', function(e) {
   e.preventDefault();
   showSettings();
 });
+
+// Memory panel buttons
+$('ss-mem-close').addEventListener('click', function() {
+  $('ss-memory-peek').style.display = 'none';
+});
+$('ss-mem-push').addEventListener('click', pushMemoryToGit);
+$('ss-mem-reset').addEventListener('click', showVersionPicker);
+
+// Version picker
+$('ss-ver-close').addEventListener('click', function() {
+  $('ss-ver-modal').style.display = 'none';
+});
+
+// Settings
+$('cfg-cancel').addEventListener('click', function() {
+  $('ss-settings').style.display = 'none';
+});
+$('cfg-save').addEventListener('click', saveSettings);
+
+// Session bar
 $('ss-session-select').addEventListener('change', function() { switchSession(this.value); });
 $('ss-session-new').addEventListener('click', newSession);
 $('ss-session-del').addEventListener('click', deleteSession);
@@ -82,143 +129,60 @@ $('ss-chat-clear').addEventListener('click', async function() {
   if (!confirm('Clear this conversation?')) return;
   chatHistory = [];
   await saveCurrentHistory();
-  var chat = $('ss-chat');
-  chat.innerHTML = '<div class="ss-message ss-message--system">Conversation cleared.</div>';
+  $('ss-chat').innerHTML = '<div class="ss-message ss-message--system">Conversation cleared.</div>';
 });
-$('ss-ver-close').addEventListener('click', function() { $('ss-ver-modal').style.display = 'none'; });
-$('ss-mem-reset').addEventListener('click', function() { showVersionPicker(); });
-$('ss-agent-btn').addEventListener('click', function() {
-  agentMode = !agentMode;
-  var btn = $('ss-agent-btn');
-  btn.style.outline = agentMode ? '2px solid #a78bfa' : 'none';
-  $('ss-send-btn').textContent = agentMode ? 'Run' : 'Ask ->';
-  if (agentMode) {
-    appendMessage('system', 'Agent mode ON. Describe a task and I will act on this page.');
-  }
-});
-$('cfg-cancel').addEventListener('click', function() {
-  $('ss-settings').style.display = 'none';
-});
-$('cfg-save').addEventListener('click', saveSettings);
 
+// ============================================================
+// MESSAGING
+// ============================================================
 
-async function getPageText() {
+async function sendMessage() {
+  const input = $('ss-input');
+  const query = input.value.trim();
+  if (!query) return;
+  input.value = '';
+  appendMessage('user', query);
+  chatHistory.push({ role: 'user', content: query });
+
+  if (agentMode) { await runAgent(query); return; }
+
+  const loadingEl = appendMessage('loading', '\u23f3 Thinking\u2026');
   try {
-    var tabs = await chrome.tabs.query({ active: true, currentWindow: true });
-    if (!tabs[0]) return null;
-    var tab = tabs[0];
-    // Use executeScript for reliable text extraction on any page
-    var results = await chrome.scripting.executeScript({
-      target: { tabId: tab.id },
-      func: function() {
-        // innerText already skips script/style/hidden - DO NOT modify the DOM
-        var text = (document.body.innerText || document.body.textContent || '').trim();
-        var metaEl = document.querySelector('meta[name="description"]');
-        return {
-          url: location.href,
-          title: document.title,
-          text: text.replace(/[ \t]{3,}/g, ' ').replace(/\n{4,}/g, '\n\n').slice(0, 8000),
-          metaDesc: metaEl ? metaEl.content : null
-        };
-      }
-    });
-    if (results && results[0] && results[0].result) return results[0].result;
-  } catch(e) {
-    // Fallback to content script message
+    // Refresh page context on each send
     try {
-      var tabs2 = await chrome.tabs.query({ active: true, currentWindow: true });
-      if (tabs2[0]) {
-        var resp = await chrome.tabs.sendMessage(tabs2[0].id, { type: 'GET_CONTEXT' });
-        if (resp && resp.context) return resp.context;
+      const fresh = await getPageText();
+      if (fresh && fresh.text && fresh.text.length > ((pageContext && pageContext.text) ? pageContext.text.length : 0)) {
+        pageContext = fresh;
       }
-    } catch(e2) { /* page not accessible */ }
-  }
-  return null;
-}
+    } catch(e) { /* keep existing */ }
 
-
-
-async function resetMemoryFromGit() {
-  if (!confirm('Re-pull MEMORY.md and SOUL.md from Git? This will overwrite any unsaved local changes.')) return;
-  var btn = $('ss-mem-reset');
-  btn.textContent = '...';
-  btn.disabled = true;
-  try {
-    var config = await loadConfig();
-    if (!config.gitOwner || !config.gitToken) {
-      alert('Git not configured. Open Settings first.');
-      btn.textContent = '\u21ba';
-      btn.disabled = false;
-      return;
+    let context = null;
+    if (includeContext && pageContext && pageContext.text) {
+      context = '[Page URL: ' + (pageContext.url || '') + ']\n[Page Title: ' + pageContext.title + ']\n\n' + pageContext.text.slice(0, 5000);
     }
-    // Clear local memory first
-    await chrome.storage.local.remove(['soul_memory', 'soul_soul']);
-    // Re-pull from git
-    var mod = await import('../api/git-storage.js');
-    var result = await mod.loadMemoryFromGit({
-      gitProvider: config.gitProvider,
-      gitOwner: config.gitOwner,
-      gitRepo: config.gitRepo,
-      gitBranch: config.gitBranch || 'main',
-      gitToken: config.gitToken
-    });
-    // Refresh display
-    var fullMem = result.memory || '';
-    $('ss-memory-text').textContent = fullMem;
-    btn.textContent = 'done';
-    setTimeout(function() { btn.textContent = '\u21ba'; btn.disabled = false; }, 2000);
-  } catch(e) {
-    alert('Reset failed: ' + e.message);
-    btn.textContent = '\u21ba';
-    btn.disabled = false;
+
+    const response = await api.ask(query, context, chatHistory.slice(-10));
+    loadingEl.remove();
+    appendMessage('assistant', response.answer);
+    chatHistory.push({ role: 'assistant', content: response.answer });
+    if (response.memory_used) $('ss-memory-text').textContent = response.memory_used;
+    await saveCurrentHistory();
+  } catch (err) {
+    loadingEl.remove();
+    appendMessage('assistant', '\u26a0\ufe0f Error: ' + err.message);
   }
 }
-
-async function pushMemoryToGit() {
-  var btn = $('ss-mem-push');
-  var statusEl = $('ss-mem-status');
-  var orig = btn.textContent;
-  btn.textContent = '...';
-  btn.disabled = true;
-  if (statusEl) statusEl.textContent = 'Pushing...';
-  try {
-    var config = await loadConfig();
-    if (!config.gitOwner || !config.gitToken) {
-      if (statusEl) statusEl.textContent = 'Git not configured - open Settings';
-      btn.textContent = orig; btn.disabled = false;
-      return;
-    }
-    var stored = await chrome.storage.local.get(['soul_memory']);
-    var memory = stored.soul_memory || '';
-    var mod = await import('../api/git-storage.js');
-    await mod.saveMemoryToGit({
-      gitProvider: config.gitProvider,
-      gitOwner: config.gitOwner,
-      gitRepo: config.gitRepo,
-      gitBranch: config.gitBranch || 'main',
-      gitToken: config.gitToken
-    }, null, memory);
-    btn.textContent = orig; btn.disabled = false;
-    if (statusEl) statusEl.textContent = 'Pushed to ' + config.gitOwner + '/' + config.gitRepo;
-  } catch(e) {
-    btn.textContent = orig; btn.disabled = false;
-    if (statusEl) statusEl.textContent = 'Push failed: ' + e.message;
-    console.error('Push failed:', e);
-  }
-}
-
 
 async function runAgent(task) {
-  var stepEl = appendMessage('loading', 'Starting agent...');
+  const stepEl = appendMessage('loading', 'Starting agent...');
   try {
-    var result = await api.agentRun(task, function(step) {
+    const result = await api.agentRun(task, function(step) {
       if (step.type === 'thought' && step.text) {
-        stepEl.textContent = step.text.slice(0, 100) + (step.text.length > 100 ? '...' : '');
+        stepEl.textContent = step.text.slice(0, 100);
       } else if (step.type === 'action') {
-        var d = step.tool.replace(/_/g, ' ');
+        let d = step.tool.replace(/_/g, ' ');
         if (step.input && step.input.element_id) d += ' [' + step.input.element_id + ']';
         if (step.input && step.input.text) d += ': "' + step.input.text.slice(0, 30) + '"';
-        if (step.input && step.input.direction) d += ' ' + step.input.direction;
         stepEl.textContent = '> ' + d;
       }
     });
@@ -232,56 +196,205 @@ async function runAgent(task) {
   }
 }
 
-async function sendMessage() {
-  var input = $('ss-input');
-  var query = input.value.trim();
-  if (!query) return;
+// ============================================================
+// PAGE TEXT EXTRACTION
+// ============================================================
 
-  input.value = '';
-  appendMessage('user', query);
-  chatHistory.push({ role: 'user', content: query });
-
-  if (agentMode) { await runAgent(query); return; }
-
-  var loadingEl = appendMessage('loading', '\u23f3 Thinking\u2026');
-
+async function getPageText() {
   try {
-    // Get page text via executeScript - works on any page regardless of load state
-    var freshContext = await getPageText();
-    if (freshContext && freshContext.text && freshContext.text.length > 100) {
-      pageContext = freshContext;
+    const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!tabs[0]) return null;
+    const results = await chrome.scripting.executeScript({
+      target: { tabId: tabs[0].id },
+      func: function() {
+        const text = (document.body.innerText || document.body.textContent || '').trim();
+        const metaEl = document.querySelector('meta[name="description"]');
+        return {
+          url: location.href,
+          title: document.title,
+          text: text.replace(/[ \t]{3,}/g, ' ').replace(/\n{4,}/g, '\n\n').slice(0, 8000),
+          metaDesc: metaEl ? metaEl.content : null
+        };
+      }
+    });
+    if (results && results[0] && results[0].result) return results[0].result;
+  } catch(e) {
+    // Fallback to content script
+    try {
+      const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (tabs[0]) {
+        const resp = await chrome.tabs.sendMessage(tabs[0].id, { type: 'GET_CONTEXT' });
+        if (resp && resp.context) return resp.context;
+      }
+    } catch(e2) { /* not accessible */ }
+  }
+  return null;
+}
+
+// ============================================================
+// MEMORY
+// ============================================================
+
+async function saveToMemory(text, source) {
+  const stored = await chrome.storage.local.get(['soul_memory']);
+  const existing = stored.soul_memory || '';
+  const date = new Date().toISOString().slice(0, 10);
+  const entry = '\n\n[' + date + (source ? ' | ' + source.slice(0, 60) : '') + ']\n' + text.slice(0, 800);
+  const updated = existing + entry;
+  await chrome.storage.local.set({ soul_memory: updated });
+  $('ss-memory-text').textContent = updated;
+}
+
+async function pushMemoryToGit() {
+  const btn = $('ss-mem-push');
+  const statusEl = $('ss-mem-status');
+  const orig = btn.textContent;
+  btn.textContent = '...'; btn.disabled = true;
+  if (statusEl) statusEl.textContent = 'Pushing...';
+  try {
+    const config = await loadConfig();
+    if (!config.gitOwner || !config.gitToken) {
+      if (statusEl) statusEl.textContent = 'Git not configured - open Settings';
+      btn.textContent = orig; btn.disabled = false; return;
     }
-
-    var context = null;
-    if (includeContext && pageContext && pageContext.text) {
-      context = '[Page URL: ' + (pageContext.url || '') + ']\n' +
-                '[Page Title: ' + pageContext.title + ']\n\n' +
-                pageContext.text.slice(0, 5000);
-    }
-
-    var response = await api.ask(query, context, chatHistory.slice(-10));
-    loadingEl.remove();
-    appendMessage('assistant', response.answer);
-    chatHistory.push({ role: 'assistant', content: response.answer });
-
-    if (response.memory_used) {
-      // memory panel stays hidden until user clicks brain button
-      $('ss-memory-text').textContent = response.memory_used;
-    }
-
-    await saveCurrentHistory();
-  } catch (err) {
-    loadingEl.remove();
-    appendMessage('assistant', '\u26a0\ufe0f Error: ' + err.message);
+    const stored = await chrome.storage.local.get(['soul_memory']);
+    const memory = stored.soul_memory || '';
+    const mod = await import('../api/git-storage.js');
+    await mod.saveMemoryToGit({
+      gitProvider: config.gitProvider, gitOwner: config.gitOwner,
+      gitRepo: config.gitRepo, gitBranch: config.gitBranch || 'main', gitToken: config.gitToken
+    }, null, memory);
+    btn.textContent = orig; btn.disabled = false;
+    if (statusEl) statusEl.textContent = 'Pushed to ' + config.gitOwner + '/' + config.gitRepo;
+  } catch(e) {
+    btn.textContent = orig; btn.disabled = false;
+    if (statusEl) statusEl.textContent = 'Push failed: ' + e.message;
+    console.error('Push failed:', e);
   }
 }
 
-function renderMarkdown(raw) {
-  var s = raw
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
+async function showVersionPicker() {
+  const config = await loadConfig();
+  if (!config.gitOwner || !config.gitToken) { alert('Git not configured.'); return; }
+  const modal = $('ss-ver-modal');
+  const list = $('ss-ver-list');
+  modal.style.display = 'flex';
+  list.textContent = 'Loading...';
+  try {
+    const url = 'https://api.github.com/repos/' + config.gitOwner + '/' + config.gitRepo +
+                '/commits?path=MEMORY.md&per_page=10&sha=' + (config.gitBranch || 'main');
+    const r = await fetch(url, {
+      headers: { 'Authorization': 'Bearer ' + config.gitToken, 'Accept': 'application/vnd.github+json' }
+    });
+    const commits = await r.json();
+    list.innerHTML = '';
+    commits.forEach(function(c) {
+      const item = document.createElement('div');
+      item.className = 'ss-ver-item';
+      const date = new Date(c.commit.author.date).toLocaleString();
+      item.innerHTML = '<span class="ss-ver-sha">' + c.sha.slice(0,7) + '</span>' +
+                       '<span class="ss-ver-date">' + date + '</span><br>' +
+                       c.commit.message.slice(0, 60);
+      item.addEventListener('click', async function() {
+        if (!confirm('Restore MEMORY.md to this commit?')) return;
+        list.textContent = 'Restoring...';
+        try {
+          const fr = await fetch('https://api.github.com/repos/' + config.gitOwner + '/' + config.gitRepo + '/contents/MEMORY.md?ref=' + c.sha,
+            { headers: { 'Authorization': 'Bearer ' + config.gitToken } });
+          const fd = await fr.json();
+          const bytes = new Uint8Array(atob(fd.content.replace(/\s/g, '')).split('').map(function(ch) { return ch.charCodeAt(0); }));
+          const text = new TextDecoder('utf-8').decode(bytes);
+          await chrome.storage.local.set({ soul_memory: text });
+          $('ss-memory-text').textContent = text;
+          modal.style.display = 'none';
+        } catch(e) { list.textContent = 'Error: ' + e.message; }
+      });
+      list.appendChild(item);
+    });
+  } catch(e) { list.textContent = 'Error: ' + e.message; }
+}
 
+// ============================================================
+// SESSIONS
+// ============================================================
+
+async function loadSessions() {
+  const s = await chrome.storage.local.get([SESSION_KEY, CURRENT_KEY]);
+  let sessions = s[SESSION_KEY] || {};
+  let currentId = s[CURRENT_KEY] || null;
+  if (Object.keys(sessions).length === 0) {
+    const defId = 'session_' + Date.now();
+    sessions[defId] = { id: defId, name: 'Session 1', history: [], created: Date.now() };
+    currentId = defId;
+    await chrome.storage.local.set({ [SESSION_KEY]: sessions, [CURRENT_KEY]: currentId });
+  }
+  if (!currentId || !sessions[currentId]) {
+    currentId = Object.keys(sessions)[0];
+    await chrome.storage.local.set({ [CURRENT_KEY]: currentId });
+  }
+  return { sessions, currentId };
+}
+
+async function saveCurrentHistory() {
+  const s = await loadSessions();
+  const sessions = s.sessions;
+  sessions[s.currentId].history = chatHistory.slice(-40);
+  await chrome.storage.local.set({ [SESSION_KEY]: sessions });
+}
+
+async function switchSession(id) {
+  const s = await loadSessions();
+  if (!s.sessions[id]) return;
+  await saveCurrentHistory();
+  await chrome.storage.local.set({ [CURRENT_KEY]: id });
+  chatHistory = (s.sessions[id].history || []).slice(-20);
+  const chat = $('ss-chat');
+  chat.innerHTML = '<div class="ss-message ss-message--system">Ask me anything about this page, or start a research thread. I remember everything.</div>';
+  chatHistory.forEach(m => appendMessage(m.role, m.content));
+  renderSessionSelect(s.sessions, id);
+}
+
+async function newSession() {
+  const s = await loadSessions();
+  await saveCurrentHistory();
+  const id = 'session_' + Date.now();
+  const name = 'Session ' + (Object.keys(s.sessions).length + 1);
+  s.sessions[id] = { id, name, history: [], created: Date.now() };
+  await chrome.storage.local.set({ [SESSION_KEY]: s.sessions, [CURRENT_KEY]: id });
+  chatHistory = [];
+  $('ss-chat').innerHTML = '<div class="ss-message ss-message--system">New session. Ask me anything.</div>';
+  renderSessionSelect(s.sessions, id);
+}
+
+async function deleteSession() {
+  const s = await loadSessions();
+  const keys = Object.keys(s.sessions);
+  if (keys.length <= 1) { alert('Cannot delete the last session.'); return; }
+  if (!confirm('Delete this session?')) return;
+  delete s.sessions[s.currentId];
+  const newCurrent = Object.keys(s.sessions)[0];
+  await chrome.storage.local.set({ [SESSION_KEY]: s.sessions, [CURRENT_KEY]: newCurrent });
+  await switchSession(newCurrent);
+}
+
+function renderSessionSelect(sessions, currentId) {
+  const sel = $('ss-session-select');
+  sel.innerHTML = '';
+  Object.values(sessions).sort((a, b) => a.created - b.created).forEach(function(sess) {
+    const opt = document.createElement('option');
+    opt.value = sess.id;
+    opt.textContent = sess.name + (sess.history && sess.history.length ? ' (' + sess.history.length + ')' : '');
+    opt.selected = sess.id === currentId;
+    sel.appendChild(opt);
+  });
+}
+
+// ============================================================
+// MARKDOWN + UI HELPERS
+// ============================================================
+
+function renderMarkdown(raw) {
+  let s = raw.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   s = s.replace(/[*][*](.+?)[*][*]/g, '<strong>$1</strong>');
   s = s.replace(/[*](.+?)[*]/g, '<em>$1</em>');
   s = s.replace(/^[#]{3} (.+)$/gm, '<h4 style="margin:6px 0 2px;color:#a78bfa">$1</h4>');
@@ -289,40 +402,33 @@ function renderMarkdown(raw) {
   s = s.replace(/^[#] (.+)$/gm,    '<h3 style="margin:8px 0 3px;color:#818cf8">$1</h3>');
   s = s.replace(/^[-*] (.+)$/gm, '<li>$1</li>');
   s = s.replace(/^[0-9]+[.] (.+)$/gm, '<li>$1</li>');
-
-  // Wrap consecutive <li> in <ul> - use String.fromCharCode to avoid \n in source
-  var LF = String.fromCharCode(10);
-  var sections = s.split(LF + LF);
+  const LF = String.fromCharCode(10);
+  const sections = s.split(LF + LF);
   s = sections.map(function(sec) {
-    var trimmed = sec.trim();
+    const trimmed = sec.trim();
     if (trimmed.indexOf('<li>') === 0) {
-      return '<ul style="margin:4px 0;padding-left:18px">' +
-        trimmed.split(LF).join('') + '</ul>';
+      return '<ul style="margin:4px 0;padding-left:18px">' + trimmed.split(LF).join('') + '</ul>';
     }
     return sec;
   }).join('<br><br>');
-
   s = s.split(LF).join('<br>');
-  // Remove <br> immediately before/after block elements to prevent double spacing
-  s = s.replace(/<br>(<(ul|ol|h3|h4|\/ul|\/ol))/g, '<$2');
-  s = s.replace(/(<\/(ul|ol|h3|h4)>)<br>/g, '</$2>');
+  s = s.replace(/<br>(<[/]?(ul|ol|h3|h4))/g, '<$2');
+  s = s.replace(/(<[/](ul|ol|h3|h4)>)<br>/g, '</$2>');
   s = s.replace(/(<br>){3,}/g, '<br><br>');
   return s;
 }
 
 function appendMessage(role, content) {
-  var chat = $('ss-chat');
-  var el = document.createElement('div');
+  const chat = $('ss-chat');
+  const el = document.createElement('div');
   el.className = 'ss-message ss-message--' + role;
   if (role === 'assistant') {
     el.innerHTML = renderMarkdown(content);
-    // Add save-to-memory button
-    var saveBtn = document.createElement('button');
+    const saveBtn = document.createElement('button');
     saveBtn.className = 'ss-save-btn';
     saveBtn.textContent = 'save to memory';
-    saveBtn.title = 'Append this to your memory';
     saveBtn.addEventListener('click', function() {
-      saveToMemory(content, window.location.href || '');
+      saveToMemory(content, pageContext ? pageContext.url : '');
       saveBtn.textContent = 'saved';
       saveBtn.disabled = true;
     });
@@ -335,52 +441,36 @@ function appendMessage(role, content) {
   return el;
 }
 
-async function saveToMemory(text, source) {
-  var stored = await chrome.storage.local.get(['soul_memory']);
-  var existing = stored.soul_memory || '';
-  var date = new Date().toISOString().slice(0, 10);
-  var entry = '\n\n[' + date + (source ? ' | ' + source.slice(0, 60) : '') + ']\n' + text.slice(0, 800);
-  var updated = existing + entry;
-  await chrome.storage.local.set({ soul_memory: updated });
-  // Update memory panel if open
-  var memText = $('ss-memory-text');
-  if (memText) memText.textContent = updated;
-}
-
 function setStatus(state, text) {
   $('ss-dot').className = 'ss-dot ' + state;
   $('ss-status-text').textContent = text;
 }
 
+// ============================================================
+// SETTINGS
+// ============================================================
+
 async function loadConfig() {
-  var defaults = {
-    provider: 'anthropic',
-    llmKey: '',
-    model: 'claude-3-haiku-20240307',
-    soul: '',
-    gitProvider: 'github',
-    gitOwner: '',
-    gitRepo: '',
-    gitBranch: 'main',
-    gitToken: '',
+  const defaults = {
+    provider: 'anthropic', llmKey: '', model: 'claude-3-haiku-20240307',
+    soul: '', gitProvider: 'github', gitOwner: '', gitRepo: '',
+    gitBranch: 'main', gitToken: '',
   };
   try {
-    var local = await chrome.storage.local.get(defaults);
+    const local = await chrome.storage.local.get(defaults);
     try {
-      var sync = await chrome.storage.sync.get(['llmKey', 'provider']);
+      const sync = await chrome.storage.sync.get(['llmKey', 'provider']);
       if (sync.llmKey && !local.llmKey) {
         local.llmKey = sync.llmKey;
         await chrome.storage.local.set({ llmKey: sync.llmKey });
       }
-    } catch (e) { /* sync unavailable */ }
+    } catch(e) { /* sync unavailable */ }
     return Object.assign({}, defaults, local);
-  } catch (e) {
-    return defaults;
-  }
+  } catch(e) { return defaults; }
 }
 
 async function showSettings() {
-  var config = await loadConfig();
+  const config = await loadConfig();
   $('cfg-provider').value     = config.provider;
   $('cfg-llm-key').value      = config.llmKey;
   $('cfg-model').value        = config.model;
@@ -394,45 +484,30 @@ async function showSettings() {
 }
 
 async function saveSettings() {
-  var gitOwner    = $('cfg-git-owner').value.trim();
-  var gitRepo     = $('cfg-git-repo').value.trim();
-  var gitBranch   = $('cfg-git-branch').value.trim() || 'main';
-  var gitToken    = $('cfg-git-token').value.trim();
-  var gitProvider = $('cfg-git-provider').value;
+  const gitOwner = $('cfg-git-owner').value.trim();
+  const gitRepo = $('cfg-git-repo').value.trim();
+  const gitBranch = $('cfg-git-branch').value.trim() || 'main';
+  const gitToken = $('cfg-git-token').value.trim();
+  const gitProvider = $('cfg-git-provider').value;
 
   await chrome.storage.local.set({
-    provider:    $('cfg-provider').value,
-    llmKey:      $('cfg-llm-key').value.trim(),
-    model:       $('cfg-model').value.trim() || 'claude-3-haiku-20240307',
-    soul:        $('cfg-soul').value.trim(),
-    gitProvider: gitProvider,
-    gitOwner:    gitOwner,
-    gitRepo:     gitRepo,
-    gitBranch:   gitBranch,
-    gitToken:    gitToken,
+    provider: $('cfg-provider').value, llmKey: $('cfg-llm-key').value.trim(),
+    model: $('cfg-model').value.trim() || 'claude-3-haiku-20240307',
+    soul: $('cfg-soul').value.trim(),
+    gitProvider, gitOwner, gitRepo, gitBranch, gitToken,
   });
 
   if (gitOwner && gitRepo && gitToken) {
-    var statusEl = $('cfg-git-status');
-    statusEl.className = 'ss-git-status info';
-    statusEl.textContent = '\u23f3 Syncing memory from Git\u2026';
+    const statusEl = $('cfg-git-status');
+    statusEl.textContent = '\u23f3 Syncing...';
     try {
-      var mod = await import('../api/git-storage.js');
-      await mod.loadMemoryFromGit({
-        gitProvider: gitProvider,
-        gitOwner: gitOwner,
-        gitRepo: gitRepo,
-        gitBranch: gitBranch,
-        gitToken: gitToken
-      });
-      statusEl.className = 'ss-git-status ok';
-      statusEl.textContent = '\u2705 Memory synced from Git';
-    } catch (e) {
-      statusEl.className = 'ss-git-status err';
-      statusEl.textContent = '\u274c Git sync failed: ' + e.message;
+      const mod = await import('../api/git-storage.js');
+      await mod.loadMemoryFromGit({ gitProvider, gitOwner, gitRepo, gitBranch, gitToken });
+      statusEl.textContent = '\u2705 Memory synced';
+    } catch(e) {
+      statusEl.textContent = '\u274c Sync failed: ' + e.message;
     }
   }
-
   $('ss-settings').style.display = 'none';
   init();
 }
