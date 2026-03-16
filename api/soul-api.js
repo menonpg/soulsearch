@@ -234,6 +234,15 @@ export class SoulSearchAPI {
         }
       },
       {
+        name: 'wait',
+        description: 'Wait for the page to update after an action. Use after clicking dropdowns or buttons before taking another snapshot.',
+        input_schema: {
+          type: 'object',
+          properties: { ms: { type: 'number', description: 'Milliseconds to wait (100-2000)' } },
+          required: []
+        }
+      },
+      {
         name: 'done',
         description: 'Mark the task as complete. Call this when finished.',
         input_schema: {
@@ -247,13 +256,13 @@ export class SoulSearchAPI {
     var cached = await chrome.storage.local.get(['soul_soul', 'soul_memory']);
     var identity = cached.soul_soul || this.soul || 'You are SoulSearch, a browser automation agent.';
     var system = 'You are a browser automation agent running inside a Chrome extension. ' +
-      'IMPORTANT: You are ALREADY connected to the user\'s active browser tab. ' +
-      'You do NOT need to navigate anywhere or "connect" to a page -- it is already open. ' +
-      'Your FIRST action must ALWAYS be snapshot_page to see what interactive elements exist on the current page. ' +
-      'Then use click, type_text, select_option, and scroll to complete the task. ' +
-      'Never say you cannot access a page -- use snapshot_page immediately. ' +
-      'Call done() with a summary when the task is complete.\n\n' +
-      'User context: ' + identity.slice(0, 300);
+      'IMPORTANT: You are ALREADY connected to the user\'s active browser tab -- the page is open in front of you. ' +
+      'WORKFLOW: (1) snapshot_page first, (2) click/type/select to interact, (3) after clicking any dropdown or button use wait(500) then snapshot_page again to see new elements, (4) read_page to check results, (5) done() when complete. ' +
+      'DROPDOWNS: After clicking a combobox/dropdown trigger, ALWAYS call wait(500) then snapshot_page to see the expanded options before clicking an option. ' +
+      'REACT PAGES: Setting values may not update React state -- prefer clicking elements over setting values directly. ' +
+      'Never say you cannot access a page. ' +
+      'Call done() with a clear summary of what was accomplished and the results you found.\n\n' +
+      'User context: ' + identity.slice(0, 200);
 
     var messages = [{ role: 'user', content: task }];
     var maxSteps = 12;
@@ -305,7 +314,7 @@ export class SoulSearchAPI {
             var snapResult = await this._execInTab(function() {
               window.__ss_map = {};
               var id = 1; var els = [];
-              var sel = 'a[href], button:not([disabled]), input:not([type="hidden"]):not([disabled]), textarea:not([disabled]), select:not([disabled]), [role="button"], [role="combobox"], [tabindex="0"]';
+              var sel = 'a[href], button:not([disabled]), input:not([type="hidden"]):not([disabled]), textarea:not([disabled]), select:not([disabled]), [role="button"], [role="combobox"], [role="option"], [role="menuitem"], [role="listitem"], [tabindex="0"]';
               document.querySelectorAll(sel).forEach(function(el) {
                 var rect = el.getBoundingClientRect();
                 if (rect.width === 0 && rect.height === 0) return;
@@ -332,6 +341,7 @@ export class SoulSearchAPI {
               return { done: true, clicked: (el.getAttribute('aria-label') || el.value || el.innerText || '').slice(0, 50) };
             }, [input.element_id]);
             result = (cr && cr.error) ? ('Error: ' + cr.error) : JSON.stringify(cr);
+            if (!cr || !cr.error) await new Promise(function(r) { setTimeout(r, 350); });
           } else if (toolName === 'type_text') {
             var tr = await this._execInTab(function(eid, text) {
               var el = window.__ss_map && window.__ss_map[eid];
@@ -357,6 +367,7 @@ export class SoulSearchAPI {
               return { done: true, clicked_custom_dropdown: val };
             }, [input.element_id, input.value]);
             result = (sr && sr.error) ? ('Error: ' + sr.error) : JSON.stringify(sr);
+            if (!sr || !sr.error) await new Promise(function(r) { setTimeout(r, 350); });
           } else if (toolName === 'scroll') {
             await this._execInTab(function(dir) {
               if (dir === 'down') window.scrollBy(0, 400);
@@ -374,6 +385,10 @@ export class SoulSearchAPI {
           } else if (toolName === 'navigate') {
             await this._execInTab(function(url) { window.location.href = url; }, [input.url]);
             result = 'Navigating to ' + input.url;
+          } else if (toolName === 'wait') {
+            var waitMs = Math.min(Math.max(input.ms || 500, 100), 2000);
+            await new Promise(function(r) { setTimeout(r, waitMs); });
+            result = 'Waited ' + waitMs + 'ms';
           } else {
             result = 'Unknown tool: ' + toolName;
           }
