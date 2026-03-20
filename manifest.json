@@ -27,7 +27,7 @@
     }
   },
   "side_panel": {
-    "default_path": "popup/popup.html"
+    "default_path": "sidepanel/sidepanel.html"
   },
   "icons": {
     "16": "icons/icon-16.png",

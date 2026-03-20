@@ -1,6 +1,9 @@
 // SoulSearch background service worker
 // Handles: context menus, memory sync, session tracking
 
+// Enable side panel (don't open on action click - popup handles that)
+chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: false }).catch(() => {});
+
 chrome.runtime.onInstalled.addListener(() => {
   chrome.contextMenus.create({
     id: 'soulsearch-ask',
