@@ -41,8 +41,10 @@ export class SoulSearchAPI {
     }
 
     // Memory is background context - useful for personalisation, not primary source
+    // Use slice(-6000) to prioritize NEWEST memories when truncating
     if (cached.soul_memory) {
-      systemParts.push(`\n\n--- Your Background Memory (use as context, not as the primary answer unless directly relevant) ---\n${cached.soul_memory.slice(0, 6000)}`);
+      const recentMemory = cached.soul_memory.slice(-6000);
+      systemParts.push(`\n\n--- Your Background Memory (use as context, not as the primary answer unless directly relevant) ---\n${recentMemory}`);
     }
 
     const systemPrompt = systemParts.join('');
