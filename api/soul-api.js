@@ -2,6 +2,8 @@
 // Calls LLM providers directly (Anthropic / OpenAI / Gemini).
 // No middleware or proxy required - your API key stays on your device.
 
+import { braveSearch, hasSearchIntent, extractSearchQuery } from './brave-search.js';
+
 export class SoulSearchAPI {
   constructor(config) {
     this.provider = config.provider || 'anthropic';
@@ -15,6 +17,12 @@ export class SoulSearchAPI {
     this.memoryLimit = config.memoryLimit || 8000;
     // Ollama base URL (defaults to localhost)
     this.ollamaUrl = config.ollamaUrl?.replace(/\/$/, '') || 'http://localhost:11434';
+    // Memory strategy: 'truncate' (fast) or 'rlm' (thorough - compresses long memory)
+    this.memoryStrategy = config.memoryStrategy || 'truncate';
+    // RLM compression threshold (chars) - compress if memory exceeds this
+    this.rlmThreshold = config.rlmThreshold || 6000;
+    // Brave Search API key (optional)
+    this.braveApiKey = config.braveApiKey || '';
   }
 
   // -- Status ------------------------------------------------------------------
@@ -31,13 +39,13 @@ export class SoulSearchAPI {
 
   // -- Core ask -----------------------------------------------------------------
 
-  async ask(query, pageContext = null, history = []) {
+  async ask(query, pageContext = null, history = [], sessionId = null) {
     if (!this.llmKey && this.provider !== 'ollama') {
       throw new Error('No LLM key set - open Settings and add your API key');
     }
 
     // Build system prompt: soul - page context (primary) - memory (background)
-    const cached = await chrome.storage.local.get(['soul_memory', 'soul_soul']);
+    const cached = await chrome.storage.local.get(['soul_memory', 'soul_soul', 'ss_sessions']);
     const defaultSoul = 'You are SoulSearch, a helpful AI research assistant embedded in the browser. ' +
       'You have access to the current page content and the user\'s personal memory. ' +
       'When asked about the current page, answer from the page content. ' +
@@ -46,15 +54,55 @@ export class SoulSearchAPI {
 
     let systemParts = [soulIdentity];
 
+    // Check for search intent and perform Brave search if enabled
+    let searchResults = null;
+    if (this.braveApiKey && hasSearchIntent(query)) {
+      try {
+        const searchQuery = extractSearchQuery(query);
+        searchResults = await braveSearch(searchQuery, this.braveApiKey, 5);
+      } catch (e) {
+        console.warn('Brave search failed:', e.message);
+      }
+    }
+
+    // Include search results in context
+    if (searchResults && searchResults.length > 0) {
+      const searchContext = searchResults.map((r, i) => 
+        `[${i + 1}] ${r.title}\n    ${r.url}\n    ${r.snippet}`
+      ).join('\n\n');
+      systemParts.push(`\n\n--- Web Search Results (use these to answer the user's query) ---\n${searchContext}`);
+    }
+
     // Page context comes FIRST - if the user asks about the page, this is the source of truth
     if (pageContext) {
       systemParts.push(`\n\n--- Current Page (answer questions about this page from here) ---\n${pageContext}`);
     }
 
-    // Memory is background context - newest memories are at the top (prepended)
-    // Truncate from end to stay within limit while preserving recent context
+    // Session-specific memory (always included for this session)
+    if (sessionId && cached.ss_sessions) {
+      const session = cached.ss_sessions[sessionId];
+      if (session && session.sessionMemory) {
+        systemParts.push(`\n\n--- Session Memory (specific context for this conversation) ---\n${session.sessionMemory}`);
+      }
+    }
+
+    // Global memory - apply memory strategy
     if (cached.soul_memory) {
-      const mem = cached.soul_memory.slice(0, this.memoryLimit);
+      let mem = cached.soul_memory;
+      
+      // RLM strategy: compress memory if it exceeds threshold
+      if (this.memoryStrategy === 'rlm' && mem.length > this.rlmThreshold) {
+        try {
+          mem = await this._compressMemory(mem);
+        } catch (e) {
+          console.warn('Memory compression failed, using truncation:', e.message);
+          mem = mem.slice(0, this.memoryLimit);
+        }
+      } else {
+        // Truncate strategy (default): simple character limit
+        mem = mem.slice(0, this.memoryLimit);
+      }
+      
       systemParts.push(`\n\n--- Your Background Memory (use as context, not as the primary answer unless directly relevant) ---\n${mem}`);
     }
 
@@ -224,6 +272,73 @@ export class SoulSearchAPI {
       l.toLowerCase().includes(query.toLowerCase())
     );
     return { results: lines };
+  }
+
+  // -- RLM (Reflective Language Model) memory compression -----------------------
+  // Asks the model to summarize/compress long memory while preserving key facts
+
+  async _compressMemory(memory) {
+    const compressionPrompt = `You are a memory compression assistant. Your task is to compress the following memory content while preserving all important facts, dates, names, decisions, and key insights. 
+
+Output a compressed version that:
+- Retains all specific facts (names, dates, numbers, URLs)
+- Preserves the chronological order of events
+- Removes redundant or repetitive information
+- Uses concise language
+- Keeps actionable items and decisions
+
+Memory to compress:
+${memory}
+
+Compressed memory (aim for ~40% of original length):`;
+
+    const msgs = [{ role: 'user', content: compressionPrompt }];
+    const system = 'You are a precise memory compression assistant. Output only the compressed memory, no explanations.';
+
+    let result;
+    switch (this.provider) {
+      case 'anthropic': result = await this._callAnthropic(system, msgs); break;
+      case 'openai':    result = await this._callOpenAI(system, msgs); break;
+      case 'gemini':    result = await this._callGemini(system, msgs); break;
+      case 'ollama':    result = await this._callOllama(system, msgs); break;
+      default:          throw new Error(`Unknown provider: ${this.provider}`);
+    }
+
+    return result.answer || memory.slice(0, this.memoryLimit);
+  }
+
+  // -- Session memory helpers ---------------------------------------------------
+
+  async saveToSessionMemory(sessionId, text, source = '') {
+    const stored = await chrome.storage.local.get(['ss_sessions']);
+    const sessions = stored.ss_sessions || {};
+    
+    if (!sessions[sessionId]) {
+      throw new Error('Session not found');
+    }
+    
+    const date = new Date().toISOString().slice(0, 10);
+    const entry = `[${date}${source ? ' | ' + source.slice(0, 60) : ''}] ${text.slice(0, 500)}\n`;
+    
+    sessions[sessionId].sessionMemory = (sessions[sessionId].sessionMemory || '') + entry;
+    await chrome.storage.local.set({ ss_sessions: sessions });
+    
+    return { ok: true, sessionMemory: sessions[sessionId].sessionMemory };
+  }
+
+  async getSessionMemory(sessionId) {
+    const stored = await chrome.storage.local.get(['ss_sessions']);
+    const sessions = stored.ss_sessions || {};
+    return sessions[sessionId]?.sessionMemory || '';
+  }
+
+  // -- Brave Search (manual trigger) --------------------------------------------
+
+  async performSearch(query, count = 5) {
+    if (!this.braveApiKey) {
+      throw new Error('Brave API key not configured - add it in Settings');
+    }
+    return braveSearch(query, this.braveApiKey, count);
   }
   // ---- Agent mode: multi-step tool calling loop -------------------------
 

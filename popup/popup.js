@@ -169,7 +169,11 @@ async function sendMessage() {
       context = '[Page URL: ' + (pageContext.url || '') + ']\n[Page Title: ' + pageContext.title + ']\n\n' + pageContext.text.slice(0, 5000);
     }
 
-    const response = await api.ask(query, context, chatHistory.slice(-10));
+    // Get current session ID for session memory
+    const s = await loadSessions();
+    const currentSessionId = s.currentId;
+
+    const response = await api.ask(query, context, chatHistory.slice(-10), currentSessionId);
     loadingEl.remove();
     appendMessage('assistant', response.answer);
     chatHistory.push({ role: 'assistant', content: response.answer });
@@ -257,6 +261,22 @@ async function saveToMemory(text, source) {
   $('ss-memory-text').textContent = updated;
 }
 
+async function saveToSessionMemory(text, source) {
+  const s = await loadSessions();
+  const sessionId = s.currentId;
+  const sessions = s.sessions;
+  
+  if (!sessions[sessionId]) return;
+  
+  const date = new Date().toISOString().slice(0, 10);
+  const entry = '[' + date + (source ? ' | ' + source.slice(0, 40) : '') + '] ' + text.slice(0, 500) + '\n';
+  
+  sessions[sessionId].sessionMemory = (sessions[sessionId].sessionMemory || '') + entry;
+  await chrome.storage.local.set({ [SESSION_KEY]: sessions });
+  
+  return sessions[sessionId].sessionMemory;
+}
+
 async function pushMemoryToGit() {
   const btn = $('ss-mem-push');
   const statusEl = $('ss-mem-status');
@@ -336,7 +356,7 @@ async function loadSessions() {
   let currentId = s[CURRENT_KEY] || null;
   if (Object.keys(sessions).length === 0) {
     const defId = 'session_' + Date.now();
-    sessions[defId] = { id: defId, name: 'Session 1', history: [], created: Date.now() };
+    sessions[defId] = { id: defId, name: 'Session 1', history: [], sessionMemory: '', created: Date.now() };
     currentId = defId;
     await chrome.storage.local.set({ [SESSION_KEY]: sessions, [CURRENT_KEY]: currentId });
   }
@@ -371,7 +391,7 @@ async function newSession() {
   await saveCurrentHistory();
   const id = 'session_' + Date.now();
   const name = 'Session ' + (Object.keys(s.sessions).length + 1);
-  s.sessions[id] = { id, name, history: [], created: Date.now() };
+  s.sessions[id] = { id, name, history: [], sessionMemory: '', created: Date.now() };
   await chrome.storage.local.set({ [SESSION_KEY]: s.sessions, [CURRENT_KEY]: id });
   chatHistory = [];
   $('ss-chat').innerHTML = '<div class="ss-message ss-message--system">New session. Ask me anything.</div>';
@@ -436,15 +456,36 @@ function appendMessage(role, content) {
   el.className = 'ss-message ss-message--' + role;
   if (role === 'assistant') {
     el.innerHTML = renderMarkdown(content);
-    const saveBtn = document.createElement('button');
-    saveBtn.className = 'ss-save-btn';
-    saveBtn.textContent = 'save to memory';
-    saveBtn.addEventListener('click', function() {
-      saveToMemory(content, pageContext ? pageContext.url : '');
-      saveBtn.textContent = 'saved';
-      saveBtn.disabled = true;
+    
+    // Create save buttons container
+    const saveBtns = document.createElement('div');
+    saveBtns.className = 'ss-save-btns';
+    
+    // Session memory button
+    const sessionBtn = document.createElement('button');
+    sessionBtn.className = 'ss-save-btn ss-save-btn--session';
+    sessionBtn.textContent = '💾 Session';
+    sessionBtn.title = 'Save to this session\'s memory';
+    sessionBtn.addEventListener('click', async function() {
+      await saveToSessionMemory(content, pageContext ? pageContext.url : '');
+      sessionBtn.textContent = '✓ Session';
+      sessionBtn.disabled = true;
     });
-    el.appendChild(saveBtn);
+    
+    // Global memory button
+    const globalBtn = document.createElement('button');
+    globalBtn.className = 'ss-save-btn ss-save-btn--global';
+    globalBtn.textContent = '🌐 Global';
+    globalBtn.title = 'Save to global memory (Git-backed)';
+    globalBtn.addEventListener('click', function() {
+      saveToMemory(content, pageContext ? pageContext.url : '');
+      globalBtn.textContent = '✓ Global';
+      globalBtn.disabled = true;
+    });
+    
+    saveBtns.appendChild(sessionBtn);
+    saveBtns.appendChild(globalBtn);
+    el.appendChild(saveBtns);
   } else {
     el.textContent = content;
   }
@@ -467,6 +508,7 @@ async function loadConfig() {
     provider: 'anthropic', llmKey: '', model: 'claude-3-haiku-20240307',
     soul: '', gitProvider: 'github', gitOwner: '', gitRepo: '',
     gitBranch: 'main', gitToken: '', ollamaUrl: 'http://localhost:11434',
+    memoryStrategy: 'truncate', braveApiKey: '',
   };
   try {
     const local = await chrome.storage.local.get(defaults);
@@ -495,6 +537,8 @@ async function showSettings() {
   $('cfg-llm-key').value      = config.llmKey;
   $('cfg-model').value        = config.model;
   $('cfg-ollama-url').value   = config.ollamaUrl || 'http://localhost:11434';
+  $('cfg-memory-strategy').value = config.memoryStrategy || 'truncate';
+  $('cfg-brave-key').value    = config.braveApiKey || '';
   $('cfg-git-provider').value = config.gitProvider;
   $('cfg-git-owner').value    = config.gitOwner;
   $('cfg-git-repo').value     = config.gitRepo;
@@ -514,12 +558,14 @@ async function saveSettings() {
   const gitProvider = $('cfg-git-provider').value;
   const provider = $('cfg-provider').value;
   const ollamaUrl = $('cfg-ollama-url').value.trim() || 'http://localhost:11434';
+  const memoryStrategy = $('cfg-memory-strategy').value;
+  const braveApiKey = $('cfg-brave-key').value.trim();
 
   await chrome.storage.local.set({
     provider, llmKey: $('cfg-llm-key').value.trim(),
     model: $('cfg-model').value.trim() || (provider === 'ollama' ? 'llama3.2' : 'claude-3-haiku-20240307'),
     soul: $('cfg-soul').value.trim(),
-    ollamaUrl,
+    ollamaUrl, memoryStrategy, braveApiKey,
     gitProvider, gitOwner, gitRepo, gitBranch, gitToken,
   });
 

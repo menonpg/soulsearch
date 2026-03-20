@@ -86,7 +86,7 @@
       <h3>Settings</h3>
 
       <div class="ss-settings-section">
-        <div class="ss-settings-section-title">🤖 LLM</div>
+        <div class="ss-settings-section-title">🤖 LLM Settings</div>
         <label>Provider
           <select id="cfg-provider">
             <option value="anthropic">Anthropic (Claude)</option>
@@ -107,7 +107,26 @@
       </div>
 
       <div class="ss-settings-section">
-        <div class="ss-settings-section-title">🗄️ Git Memory <span class="ss-optional">(optional — stores SOUL.md + MEMORY.md)</span></div>
+        <div class="ss-settings-section-title">🧠 Memory Settings</div>
+        <label>Memory Strategy
+          <select id="cfg-memory-strategy">
+            <option value="truncate">Truncate (fast) — cuts off at limit</option>
+            <option value="rlm">RLM (thorough) — compresses long memory</option>
+          </select>
+        </label>
+        <p class="ss-hint">RLM asks the model to summarize memory when it exceeds 6000 chars. Slower but preserves more context.</p>
+      </div>
+
+      <div class="ss-settings-section">
+        <div class="ss-settings-section-title">🔍 Search Settings <span class="ss-optional">(optional)</span></div>
+        <label>Brave Search API Key
+          <input type="password" id="cfg-brave-key" placeholder="BSA..." />
+        </label>
+        <p class="ss-hint">Get a free key at <a href="https://api.search.brave.com/" target="_blank">api.search.brave.com</a>. Enables web search when you say "search for" or "look up".</p>
+      </div>
+
+      <div class="ss-settings-section">
+        <div class="ss-settings-section-title">🗄️ Git Settings <span class="ss-optional">(optional — stores SOUL.md + MEMORY.md)</span></div>
         <label>Git Host
           <select id="cfg-git-provider">
             <option value="github">GitHub</option>
