@@ -52,8 +52,9 @@ export class SoulSearchAPI {
     // Build system prompt: soul - page context (primary) - memory (background)
     const cached = await chrome.storage.local.get(['soul_memory', 'soul_soul', 'ss_sessions']);
     const defaultSoul = 'You are SoulSearch, a helpful AI research assistant embedded in the browser. ' +
-      'You have access to the current page content and the user\'s personal memory. ' +
-      'When asked about the current page, answer from the page content. ' +
+      'IMPORTANT: You CAN see the current webpage - its content is included in your context. ' +
+      'When the user asks about "this page" or "this website", answer directly from the page content provided. ' +
+      'Never say you cannot see or access the page - you have the full text content available. ' +
       'Be concise, insightful, and cite specific details from the page when relevant.';
     const soulIdentity = cached.soul_soul || this.soul || defaultSoul;
 
@@ -66,7 +67,7 @@ export class SoulSearchAPI {
 
     // Page context comes FIRST - if the user asks about the page, this is the source of truth
     if (pageContext) {
-      systemParts.push(`\n\n--- Current Page (answer questions about this page from here) ---\n${pageContext}`);
+      systemParts.push(`\n\n=== CURRENT PAGE CONTENT (YOU CAN SEE THIS - answer questions from it!) ===\nThe user is viewing a webpage. The full text content is included below. When they ask about "this page" or "this website", answer from this content. Do NOT say you cannot see the page - the content is RIGHT HERE:\n\n${pageContext}\n\n=== END OF PAGE CONTENT ===`);
     }
 
     // Session-specific memory (always included for this session)
