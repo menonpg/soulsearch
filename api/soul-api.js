@@ -440,6 +440,7 @@ Compressed memory (aim for ~40% of original length):`;
       'DROPDOWNS: After clicking a combobox/dropdown trigger, ALWAYS call wait(500) then snapshot_page to see the expanded options before clicking an option. ' +
       'REACT PAGES: Setting values may not update React state -- prefer clicking elements over setting values directly. ' +
       'Never say you cannot access a page. ' +
+      'Never say you cannot access the internet or search the web - you have the web_search tool available! Use it for any query about current events, news, or external information. ' +
       'Call done() with a clear summary of what was accomplished and the results you found.\n\n' +
       'User context: ' + identity.slice(0, 200);
 
