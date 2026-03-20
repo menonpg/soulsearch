@@ -28,7 +28,7 @@ async function init() {
       const hasMem  = !!(check.soul_memory && check.soul_memory.length > 10);
       const tag = hasSoul ? ' \u00b7 identity loaded' : ' \u00b7 no identity (Settings)';
       setStatus('connected', 'Memory active' + (hasMem ? ' \u00b7 mem \u2713' : '') + tag);
-      if (hasMem) $('ss-memory-text').textContent = check.soul_memory;
+      if (hasMem) $('ss-memory-global-text').textContent = check.soul_memory;
     } else {
       setStatus('error', 'No API key -- open Settings');
     }
@@ -123,6 +123,22 @@ $('ss-ver-close').addEventListener('click', function() {
   $('ss-ver-modal').style.display = 'none';
 });
 
+// Memory tab switching
+$('ss-mem-tab-session').addEventListener('click', function() {
+  $('ss-mem-tab-session').classList.add('ss-mem-tab--active');
+  $('ss-mem-tab-global').classList.remove('ss-mem-tab--active');
+  $('ss-memory-session-text').style.display = 'block';
+  $('ss-memory-global-text').style.display = 'none';
+  updateSessionMemoryDisplay();
+});
+
+$('ss-mem-tab-global').addEventListener('click', function() {
+  $('ss-mem-tab-global').classList.add('ss-mem-tab--active');
+  $('ss-mem-tab-session').classList.remove('ss-mem-tab--active');
+  $('ss-memory-global-text').style.display = 'block';
+  $('ss-memory-session-text').style.display = 'none';
+});
+
 // Settings
 $('cfg-cancel').addEventListener('click', function() {
   $('ss-settings').style.display = 'none';
@@ -177,7 +193,7 @@ async function sendMessage() {
     loadingEl.remove();
     appendMessage('assistant', response.answer);
     chatHistory.push({ role: 'assistant', content: response.answer });
-    if (response.memory_used) $('ss-memory-text').textContent = response.memory_used;
+    if (response.memory_used) $('ss-memory-global-text').textContent = response.memory_used;
     await saveCurrentHistory();
   } catch (err) {
     loadingEl.remove();
@@ -258,7 +274,14 @@ async function saveToMemory(text, source) {
   const entry = '\n\n[' + date + (source ? ' | ' + source.slice(0, 60) : '') + ']\n' + text.slice(0, 800);
   const updated = existing + entry;
   await chrome.storage.local.set({ soul_memory: updated });
-  $('ss-memory-text').textContent = updated;
+  $('ss-memory-global-text').textContent = updated;
+}
+
+async function updateSessionMemoryDisplay() {
+  const s = await loadSessions();
+  const session = s.sessions[s.currentId];
+  const sessionMem = session?.sessionMemory || '';
+  $('ss-memory-session-text').textContent = sessionMem || '(No session memories yet. Click "💾 Session" on any response to save.)';
 }
 
 async function saveToSessionMemory(text, source) {
@@ -273,6 +296,11 @@ async function saveToSessionMemory(text, source) {
   
   sessions[sessionId].sessionMemory = (sessions[sessionId].sessionMemory || '') + entry;
   await chrome.storage.local.set({ [SESSION_KEY]: sessions });
+  
+  // Update display if panel is open
+  if ($('ss-memory-peek').style.display !== 'none') {
+    $('ss-memory-session-text').textContent = sessions[sessionId].sessionMemory;
+  }
   
   return sessions[sessionId].sessionMemory;
 }
@@ -337,7 +365,7 @@ async function showVersionPicker() {
           const bytes = new Uint8Array(atob(fd.content.replace(/\s/g, '')).split('').map(function(ch) { return ch.charCodeAt(0); }));
           const text = new TextDecoder('utf-8').decode(bytes);
           await chrome.storage.local.set({ soul_memory: text });
-          $('ss-memory-text').textContent = text;
+          $('ss-memory-global-text').textContent = text;
           modal.style.display = 'none';
         } catch(e) { list.textContent = 'Error: ' + e.message; }
       });
@@ -415,7 +443,8 @@ function renderSessionSelect(sessions, currentId) {
   Object.values(sessions).sort((a, b) => a.created - b.created).forEach(function(sess) {
     const opt = document.createElement('option');
     opt.value = sess.id;
-    opt.textContent = sess.name + (sess.history && sess.history.length ? ' (' + sess.history.length + ')' : '');
+    const memCount = sess.sessionMemory ? sess.sessionMemory.split('\n').filter(l => l.trim()).length : 0;
+    opt.textContent = sess.name + ' (' + (sess.history?.length || 0) + ')' + (memCount ? ' 🧠' + memCount : '');
     opt.selected = sess.id === currentId;
     sel.appendChild(opt);
   });

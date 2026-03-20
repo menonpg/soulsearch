@@ -332,3 +332,29 @@ body {
 .ss-ver-item:hover { border-color: #a78bfa; color: #fff; }
 .ss-ver-item .ss-ver-sha { color: #6b7280; font-family: monospace; font-size: 10px; }
 .ss-ver-item .ss-ver-date { color: #818cf8; float: right; }
+
+/* ---- Memory tabs ---------------------------------------------------- */
+.ss-memory-tabs {
+  display: flex;
+  border-bottom: 1px solid #3d3b54;
+  background: #2d2b42;
+}
+.ss-mem-tab {
+  flex: 1;
+  padding: 8px 12px;
+  background: transparent;
+  border: none;
+  color: #9ca3af;
+  cursor: pointer;
+  font-size: 12px;
+  transition: all 0.2s;
+}
+.ss-mem-tab:hover {
+  background: #3d3b54;
+  color: #e5e7eb;
+}
+.ss-mem-tab--active {
+  background: #1e1b2e;
+  color: #a78bfa;
+  border-bottom: 2px solid #a78bfa;
+}

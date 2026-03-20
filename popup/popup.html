@@ -44,15 +44,20 @@
     <!-- Memory Panel (overlay) -->
     <div class="ss-memory-panel" id="ss-memory-peek" style="display:none">
       <div class="ss-memory-panel-header">
-        <span>&#129504; Memory</span>
+        <span>🧠 Memory</span>
         <div class="ss-memory-panel-actions">
-          <button class="ss-btn ss-btn--icon ss-btn--small" id="ss-mem-reset" title="Reset from Git">&#128257;</button>
-          <button class="ss-btn ss-btn--icon ss-btn--small" id="ss-mem-push" title="Push to Git">&#128640;</button>
-          <button class="ss-btn ss-btn--icon ss-btn--small" id="ss-mem-close" title="Close">&#215;</button>
+          <button class="ss-btn ss-btn--icon ss-btn--small" id="ss-mem-reset" title="Reset from Git">🔁</button>
+          <button class="ss-btn ss-btn--icon ss-btn--small" id="ss-mem-push" title="Push to Git">🚀</button>
+          <button class="ss-btn ss-btn--icon ss-btn--small" id="ss-mem-close" title="Close">×</button>
         </div>
       </div>
+      <div class="ss-memory-tabs">
+        <button class="ss-mem-tab ss-mem-tab--active" id="ss-mem-tab-session">📝 Session</button>
+        <button class="ss-mem-tab" id="ss-mem-tab-global">🌐 Global</button>
+      </div>
       <div id="ss-mem-status" style="font-size:10px;padding:3px 12px;color:#6b7280;background:#2d2b42;flex-shrink:0;min-height:16px"></div>
-      <div class="ss-memory-panel-body" id="ss-memory-text"></div>
+      <div class="ss-memory-panel-body" id="ss-memory-session-text" style="display:block"><em>No session memories yet. Click "💾 Session" on any response to save.</em></div>
+      <div class="ss-memory-panel-body" id="ss-memory-global-text" style="display:none"></div>
     </div>
 
     <!-- Input -->
