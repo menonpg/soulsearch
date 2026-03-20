@@ -444,7 +444,7 @@ Compressed memory (aim for ~40% of original length):`;
       'User context: ' + identity.slice(0, 200);
 
     var messages = [{ role: 'user', content: task }];
-    var maxSteps = 12;
+    var maxSteps = 16;
 
     // Determine agent settings (fall back to chat settings if not specified)
     var effectiveAgentProvider = this.agentProvider || this.provider;
@@ -456,6 +456,14 @@ Compressed memory (aim for ~40% of original length):`;
     console.log('[SoulSearch Agent] starting, provider:', effectiveAgentProvider, ', model:', effectiveAgentModel, ', key length:', effectiveAgentKey ? effectiveAgentKey.length : 0);
 
     for (var step = 0; step < maxSteps; step++) {
+      // Force wrap-up when approaching step limit
+      if (step === maxSteps - 2) {
+        messages.push({
+          role: 'user',
+          content: 'You are running low on steps. Please summarize your findings now and call done() with your complete answer.'
+        });
+      }
+
       var tc = (step === 0) ? { type: 'tool', name: 'snapshot_page' } : { type: 'auto' };
       if (onStep) onStep({ type: 'thought', text: '[Step ' + (step+1) + '] calling ' + effectiveAgentProvider + '...' });
       console.log('[SoulSearch Agent] step', step, 'provider:', effectiveAgentProvider, 'tool_choice:', JSON.stringify(tc));
@@ -632,7 +640,7 @@ Compressed memory (aim for ~40% of original length):`;
       }
     }
 
-    return 'Max steps reached without completion.';
+    return 'Max steps reached. The agent may not have completed the full task. Consider breaking it into smaller steps.';
   }
 
   async _tabMessage(msg) {
