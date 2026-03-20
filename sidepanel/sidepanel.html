@@ -17,12 +17,15 @@
     .ss-container {
       width: 100% !important;
       height: 100% !important;
+      min-height: 100% !important;
+      max-height: 100% !important;
       max-width: none !important;
       display: flex !important;
       flex-direction: column !important;
       padding: 0 !important;
       margin: 0 !important;
       box-sizing: border-box !important;
+      overflow: hidden !important;
     }
     .ss-header {
       flex-shrink: 0 !important;
@@ -33,16 +36,12 @@
       padding: 8px 16px !important;
     }
     .ss-chat {
-      flex: 1 1 auto !important;
+      flex: 1 1 0 !important;
       overflow-y: auto !important;
       min-height: 0 !important;
+      max-height: none !important;
       padding: 8px 16px !important;
-      display: flex !important;
-      flex-direction: column !important;
-      justify-content: flex-end !important;
-    }
-    .ss-chat > * {
-      flex-shrink: 0 !important;
+      display: block !important;
     }
     .ss-input-area {
       flex-shrink: 0 !important;
