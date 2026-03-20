@@ -112,6 +112,20 @@
         <label class="cfg-label">Agent Model <span class="cfg-hint">(leave empty to use chat model; for Ollama, use tool-capable model like llama3.2 or qwen2.5)</span>
           <input type="text" id="cfg-agent-model" class="cfg-input" placeholder="e.g., llama3.2 (optional)" />
         </label>
+
+        <label class="cfg-label">Agent Provider <span class="cfg-hint">(leave empty to use chat provider)</span></label>
+        <select id="cfg-agent-provider" class="cfg-input">
+          <option value="">(Use chat provider)</option>
+          <option value="anthropic">Anthropic (Claude)</option>
+          <option value="openai">OpenAI</option>
+          <option value="ollama">Ollama</option>
+        </select>
+
+        <label class="cfg-label" id="cfg-agent-key-label">Agent API Key <span class="cfg-hint">(only needed if different provider)</span></label>
+        <input type="password" id="cfg-agent-key" class="cfg-input" placeholder="(uses chat key if empty)">
+
+        <label class="cfg-label" id="cfg-agent-url-label" style="display:none">Agent Ollama URL</label>
+        <input type="text" id="cfg-agent-ollama-url" class="cfg-input" placeholder="http://localhost:11434" style="display:none">
       </div>
 
       <div class="ss-settings-section">

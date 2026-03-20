@@ -11,6 +11,10 @@ export class SoulSearchAPI {
     this.soul     = config.soul     || 'I am a research assistant with persistent memory. I help you understand and research web content.';
     this.model    = config.model    || 'claude-3-haiku-20240307';
     this.agentModel = config.agentModel || '';
+    // Agent-specific provider settings (fall back to chat settings if empty)
+    this.agentProvider = config.agentProvider || '';
+    this.agentApiKey = config.agentApiKey || '';
+    this.agentOllamaUrl = config.agentOllamaUrl || '';
     // SoulMate API optional - only used if explicitly configured with a key
     this.apiUrl   = config.apiUrl?.replace(/\/$/, '') || '';
     this.apiKey   = config.apiKey   || '';
@@ -442,20 +446,24 @@ Compressed memory (aim for ~40% of original length):`;
     var messages = [{ role: 'user', content: task }];
     var maxSteps = 12;
 
-    // Use agentModel if set, otherwise fall back to chat model
-    var agentModelToUse = this.agentModel || this.model;
-    if (onStep) onStep({ type: 'thought', text: '[SoulSearch Agent] starting -- provider: ' + this.provider + ', model: ' + agentModelToUse });
-    console.log('[SoulSearch Agent] starting, provider:', this.provider, ', model:', agentModelToUse, ', key length:', this.llmKey ? this.llmKey.length : 0);
+    // Determine agent settings (fall back to chat settings if not specified)
+    var effectiveAgentProvider = this.agentProvider || this.provider;
+    var effectiveAgentKey = this.agentProvider ? (this.agentApiKey || this.llmKey) : this.llmKey;
+    var effectiveAgentModel = this.agentModel || this.model;
+    var effectiveAgentOllamaUrl = this.agentProvider === 'ollama' ? (this.agentOllamaUrl || this.ollamaUrl) : this.ollamaUrl;
+
+    if (onStep) onStep({ type: 'thought', text: '[SoulSearch Agent] starting -- provider: ' + effectiveAgentProvider + ', model: ' + effectiveAgentModel });
+    console.log('[SoulSearch Agent] starting, provider:', effectiveAgentProvider, ', model:', effectiveAgentModel, ', key length:', effectiveAgentKey ? effectiveAgentKey.length : 0);
 
     for (var step = 0; step < maxSteps; step++) {
       var tc = (step === 0) ? { type: 'tool', name: 'snapshot_page' } : { type: 'auto' };
-      if (onStep) onStep({ type: 'thought', text: '[Step ' + (step+1) + '] calling ' + this.provider + '...' });
-      console.log('[SoulSearch Agent] step', step, 'provider:', this.provider, 'tool_choice:', JSON.stringify(tc));
+      if (onStep) onStep({ type: 'thought', text: '[Step ' + (step+1) + '] calling ' + effectiveAgentProvider + '...' });
+      console.log('[SoulSearch Agent] step', step, 'provider:', effectiveAgentProvider, 'tool_choice:', JSON.stringify(tc));
       var resp;
-      if (this.provider === 'ollama') {
-        resp = await this._callOllamaTools(system, messages, tools, tc);
+      if (effectiveAgentProvider === 'ollama') {
+        resp = await this._callOllamaTools(system, messages, tools, tc, effectiveAgentModel, effectiveAgentOllamaUrl);
       } else {
-        resp = await this._callAnthropicTools(system, messages, tools, tc);
+        resp = await this._callAnthropicTools(system, messages, tools, tc, effectiveAgentKey, effectiveAgentModel);
       }
       console.log('[SoulSearch Agent] step', step, 'stop_reason:', resp.stop_reason, 'content blocks:', resp.content ? resp.content.length : 0);
 
@@ -649,18 +657,20 @@ Compressed memory (aim for ~40% of original length):`;
     return results && results[0] ? results[0].result : null;
   }
 
-  async _callAnthropicTools(system, messages, tools, toolChoice) {
+  async _callAnthropicTools(system, messages, tools, toolChoice, apiKey, model) {
     if (!toolChoice) toolChoice = { type: 'auto' };
+    var keyToUse = apiKey || this.llmKey;
+    var modelToUse = model || this.model || 'claude-3-5-haiku-20241022';
     var r = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
-        'x-api-key': this.llmKey,
+        'x-api-key': keyToUse,
         'anthropic-version': '2023-06-01',
         'anthropic-dangerous-direct-browser-access': 'true',
         'content-type': 'application/json'
       },
       body: JSON.stringify({
-        model: this.model || 'claude-3-5-haiku-20241022',
+        model: modelToUse,
         max_tokens: 2048,
         system: system,
         messages: messages,
@@ -674,7 +684,7 @@ Compressed memory (aim for ~40% of original length):`;
     return r.json();
   }
 
-  async _callOllamaTools(system, messages, tools, toolChoice) {
+  async _callOllamaTools(system, messages, tools, toolChoice, model, ollamaUrl) {
     // Convert Anthropic tool format to Ollama/OpenAI format
     var ollamaTools = tools.map(function(t) {
       return {
@@ -731,12 +741,13 @@ Compressed memory (aim for ~40% of original length):`;
       }
     }
 
-    var model = this.agentModel || this.model || 'llama3.2';
-    var resp = await fetch(this.ollamaUrl + '/api/chat', {
+    var modelToUse = model || this.agentModel || this.model || 'llama3.2';
+    var urlToUse = ollamaUrl || this.ollamaUrl || 'http://localhost:11434';
+    var resp = await fetch(urlToUse + '/api/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: model,
+        model: modelToUse,
         messages: ollamaMessages,
         tools: ollamaTools,
         stream: false
@@ -748,7 +759,7 @@ Compressed memory (aim for ~40% of original length):`;
       var errText = await resp.text().catch(function() { return resp.statusText; });
       // Check for tool support error
       if (errText.includes('does not support tools')) {
-        throw new Error('Model "' + model + '" doesn\'t support tools. Set a tool-capable Agent Model in Settings (e.g., llama3.2, qwen2.5)');
+        throw new Error('Model "' + modelToUse + '" doesn\'t support tools. Set a tool-capable Agent Model in Settings (e.g., llama3.2, qwen2.5)');
       }
       throw new Error('Ollama ' + resp.status + ': ' + errText);
     }

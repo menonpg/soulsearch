@@ -536,6 +536,9 @@ async function loadConfig() {
   const defaults = {
     provider: 'anthropic', llmKey: '', model: 'claude-3-haiku-20240307',
     agentModel: '',
+    agentProvider: '',
+    agentApiKey: '',
+    agentOllamaUrl: '',
     soul: '', gitProvider: 'github', gitOwner: '', gitRepo: '',
     gitBranch: 'main', gitToken: '', ollamaUrl: 'http://localhost:11434',
     memoryStrategy: 'truncate', braveApiKey: '',
@@ -561,6 +564,15 @@ function updateProviderUI(provider) {
   if (keyHint) keyHint.textContent = isOllama ? '(not needed for Ollama)' : '';
 }
 
+function updateAgentProviderUI(agentProvider) {
+  const isOllama = agentProvider === 'ollama';
+  const needsKey = agentProvider === 'anthropic' || agentProvider === 'openai';
+  $('cfg-agent-key-label').style.display = needsKey ? 'block' : 'none';
+  $('cfg-agent-key').style.display = needsKey ? 'block' : 'none';
+  $('cfg-agent-url-label').style.display = isOllama ? 'block' : 'none';
+  $('cfg-agent-ollama-url').style.display = isOllama ? 'block' : 'none';
+}
+
 async function showSettings() {
   const config = await loadConfig();
   $('cfg-provider').value     = config.provider;
@@ -570,6 +582,10 @@ async function showSettings() {
   $('cfg-memory-strategy').value = config.memoryStrategy || 'truncate';
   $('cfg-brave-key').value    = config.braveApiKey || '';
   $('cfg-agent-model').value  = config.agentModel || '';
+  $('cfg-agent-provider').value = config.agentProvider || '';
+  $('cfg-agent-key').value = config.agentApiKey || '';
+  $('cfg-agent-ollama-url').value = config.agentOllamaUrl || '';
+  updateAgentProviderUI(config.agentProvider);
   $('cfg-git-provider').value = config.gitProvider;
   $('cfg-git-owner').value    = config.gitOwner;
   $('cfg-git-repo').value     = config.gitRepo;
@@ -579,6 +595,7 @@ async function showSettings() {
   updateProviderUI(config.provider);
   $('ss-settings').style.display = 'block';
   $('cfg-provider').onchange = function() { updateProviderUI(this.value); };
+  $('cfg-agent-provider').onchange = function() { updateAgentProviderUI(this.value); };
 }
 
 async function saveSettings() {
@@ -596,6 +613,9 @@ async function saveSettings() {
     provider, llmKey: $('cfg-llm-key').value.trim(),
     model: $('cfg-model').value.trim() || (provider === 'ollama' ? 'llama3.2' : 'claude-3-haiku-20240307'),
     agentModel: $('cfg-agent-model').value.trim(),
+    agentProvider: $('cfg-agent-provider').value,
+    agentApiKey: $('cfg-agent-key').value.trim(),
+    agentOllamaUrl: $('cfg-agent-ollama-url').value.trim(),
     soul: $('cfg-soul').value.trim(),
     ollamaUrl, memoryStrategy, braveApiKey,
     gitProvider, gitOwner, gitRepo, gitBranch, gitToken,
