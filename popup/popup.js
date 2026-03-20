@@ -167,6 +167,7 @@ async function sendMessage() {
   input.value = '';
   appendMessage('user', query);
   chatHistory.push({ role: 'user', content: query });
+  await saveCurrentHistory();  // Save immediately so question isn't lost if popup closes
 
   if (agentMode) { await runAgent(query); return; }
 
