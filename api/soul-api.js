@@ -439,14 +439,19 @@ Compressed memory (aim for ~40% of original length):`;
     var messages = [{ role: 'user', content: task }];
     var maxSteps = 12;
 
-    if (onStep) onStep({ type: 'thought', text: '[SoulSearch Agent] starting -- model: claude-3-5-haiku-20241022' });
-    console.log('[SoulSearch Agent] starting, key length:', this.llmKey ? this.llmKey.length : 0);
+    if (onStep) onStep({ type: 'thought', text: '[SoulSearch Agent] starting -- provider: ' + this.provider + ', model: ' + this.model });
+    console.log('[SoulSearch Agent] starting, provider:', this.provider, ', model:', this.model, ', key length:', this.llmKey ? this.llmKey.length : 0);
 
     for (var step = 0; step < maxSteps; step++) {
       var tc = (step === 0) ? { type: 'tool', name: 'snapshot_page' } : { type: 'auto' };
-      if (onStep) onStep({ type: 'thought', text: '[Step ' + (step+1) + '] calling Anthropic...' });
-      console.log('[SoulSearch Agent] step', step, 'tool_choice:', JSON.stringify(tc));
-      var resp = await this._callAnthropicTools(system, messages, tools, tc);
+      if (onStep) onStep({ type: 'thought', text: '[Step ' + (step+1) + '] calling ' + this.provider + '...' });
+      console.log('[SoulSearch Agent] step', step, 'provider:', this.provider, 'tool_choice:', JSON.stringify(tc));
+      var resp;
+      if (this.provider === 'ollama') {
+        resp = await this._callOllamaTools(system, messages, tools, tc);
+      } else {
+        resp = await this._callAnthropicTools(system, messages, tools, tc);
+      }
       console.log('[SoulSearch Agent] step', step, 'stop_reason:', resp.stop_reason, 'content blocks:', resp.content ? resp.content.length : 0);
 
       // Collect text and tool_use blocks
@@ -570,10 +575,28 @@ Compressed memory (aim for ~40% of original length):`;
           if (onStep) onStep({ type: 'thought', text: '[Error] ' + toolName + ': ' + e.message });
         }
 
-        toolResults.push({ type: 'tool_result', tool_use_id: call.id, content: result });
+        toolResults.push({ tool_use_id: call.id, content: result });
       }
 
-      messages.push({ role: 'user', content: toolResults });
+      // Format tool results based on provider
+      if (this.provider === 'ollama') {
+        // Ollama expects separate tool messages
+        for (var j = 0; j < toolResults.length; j++) {
+          messages.push({
+            role: 'tool',
+            content: toolResults[j].content,
+            tool_call_id: toolResults[j].tool_use_id
+          });
+        }
+      } else {
+        // Anthropic expects tool_result in user message
+        messages.push({
+          role: 'user',
+          content: toolResults.map(function(tr) {
+            return { type: 'tool_result', tool_use_id: tr.tool_use_id, content: tr.content };
+          })
+        });
+      }
     }
 
     return 'Max steps reached without completion.';
@@ -624,6 +647,107 @@ Compressed memory (aim for ~40% of original length):`;
       throw new Error('Anthropic ' + r.status + ': ' + ((err.error && err.error.message) || r.statusText));
     }
     return r.json();
+  }
+
+  async _callOllamaTools(system, messages, tools, toolChoice) {
+    // Convert Anthropic tool format to Ollama/OpenAI format
+    var ollamaTools = tools.map(function(t) {
+      return {
+        type: 'function',
+        function: {
+          name: t.name,
+          description: t.description,
+          parameters: t.input_schema
+        }
+      };
+    });
+
+    // Convert messages format - Ollama uses OpenAI-style messages
+    var ollamaMessages = [{ role: 'system', content: system }];
+    for (var i = 0; i < messages.length; i++) {
+      var m = messages[i];
+      if (m.role === 'tool') {
+        // Tool result message (from previous iteration)
+        ollamaMessages.push({
+          role: 'tool',
+          content: typeof m.content === 'string' ? m.content : JSON.stringify(m.content),
+          tool_call_id: m.tool_call_id
+        });
+      } else if (m.role === 'assistant' && Array.isArray(m.content)) {
+        // Assistant message with potential tool calls
+        var textContent = '';
+        var toolCalls = [];
+        for (var j = 0; j < m.content.length; j++) {
+          var block = m.content[j];
+          if (block.type === 'text') {
+            textContent += block.text;
+          } else if (block.type === 'tool_use') {
+            toolCalls.push({
+              id: block.id,
+              type: 'function',
+              function: {
+                name: block.name,
+                arguments: JSON.stringify(block.input)
+              }
+            });
+          }
+        }
+        var assistantMsg = { role: 'assistant', content: textContent || '' };
+        if (toolCalls.length > 0) {
+          assistantMsg.tool_calls = toolCalls;
+        }
+        ollamaMessages.push(assistantMsg);
+      } else {
+        // Regular user/assistant message
+        ollamaMessages.push({
+          role: m.role,
+          content: typeof m.content === 'string' ? m.content : JSON.stringify(m.content)
+        });
+      }
+    }
+
+    var model = this.model || 'llama3.2';
+    var resp = await fetch(this.ollamaUrl + '/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: model,
+        messages: ollamaMessages,
+        tools: ollamaTools,
+        stream: false
+      }),
+      signal: AbortSignal.timeout(120000)
+    });
+
+    if (!resp.ok) {
+      var errText = await resp.text().catch(function() { return resp.statusText; });
+      throw new Error('Ollama ' + resp.status + ': ' + errText);
+    }
+    var data = await resp.json();
+
+    // Convert Ollama response to Anthropic-like format for compatibility
+    var content = [];
+    if (data.message && data.message.content) {
+      content.push({ type: 'text', text: data.message.content });
+    }
+    if (data.message && data.message.tool_calls) {
+      for (var k = 0; k < data.message.tool_calls.length; k++) {
+        var tc = data.message.tool_calls[k];
+        content.push({
+          type: 'tool_use',
+          id: tc.id || ('tool_' + Date.now() + '_' + k),
+          name: tc.function.name,
+          input: typeof tc.function.arguments === 'string'
+            ? JSON.parse(tc.function.arguments)
+            : tc.function.arguments
+        });
+      }
+    }
+
+    return {
+      content: content,
+      stop_reason: (data.message && data.message.tool_calls && data.message.tool_calls.length) ? 'tool_use' : 'end_turn'
+    };
   }
 
 
