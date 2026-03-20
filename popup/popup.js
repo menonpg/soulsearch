@@ -92,13 +92,28 @@ $('ss-mem-btn').addEventListener('click', function() {
   const panel = $('ss-memory-peek');
   panel.style.display = panel.style.display === 'none' ? 'flex' : 'none';
 });
-$('ss-agent-btn').addEventListener('click', async function() {
-  // Open side panel for agent mode instead of toggling in popup
+$('ss-agent-btn').addEventListener('click', async function(e) {
+  // Shift+click = toggle agent mode in popup (don't open side panel)
+  if (e.shiftKey) {
+    agentMode = !agentMode;
+    $('ss-agent-btn').style.outline = agentMode ? '2px solid #a78bfa' : 'none';
+    $('ss-agent-btn').style.background = agentMode ? '#3b1f6b' : '';
+    $('ss-send-btn').textContent = agentMode ? 'Run Agent' : 'Ask ->';
+    $('ss-send-btn').style.background = agentMode ? '#7c3aed' : '';
+    $('ss-input').placeholder = agentMode
+      ? 'Describe a task to perform on this page...'
+      : 'Ask about this page...';
+    if (agentMode) appendMessage('system', 'Agent mode ON (popup). Note: popup may close during page actions.');
+    else appendMessage('system', 'Agent mode OFF.');
+    return;
+  }
+  
+  // Normal click = open side panel for agent mode
   try {
     const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
     if (tabs[0]) {
       await chrome.sidePanel.open({ tabId: tabs[0].id });
-      window.close(); // Close popup, agent runs in side panel
+      window.close();
     }
   } catch(e) {
     // Fallback: toggle agent mode in popup if side panel fails
@@ -110,9 +125,7 @@ $('ss-agent-btn').addEventListener('click', async function() {
     $('ss-input').placeholder = agentMode
       ? 'Describe a task to perform on this page...'
       : 'Ask about this page...';
-    setStatus(agentMode ? 'connected' : 'connected',
-      agentMode ? 'AGENT MODE -- I will act on this page' : 'Memory active');
-    if (agentMode) appendMessage('system', 'Agent mode ON (fallback). Side panel unavailable.');
+    if (agentMode) appendMessage('system', 'Agent mode ON (fallback).');
     else appendMessage('system', 'Agent mode OFF.');
   }
 });
