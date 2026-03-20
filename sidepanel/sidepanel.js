@@ -1,6 +1,8 @@
 import { SoulSearchAPI } from '../api/soul-api.js';
 
 const $ = id => document.getElementById(id);
+const SESSION_KEY = 'ss_sessions';
+const CURRENT_KEY = 'ss_current';
 
 let api = null;
 let chatHistory = [];
@@ -89,7 +91,37 @@ async function getPageText() {
   } catch(e) { return null; }
 }
 
-// Markdown renderer (same as popup.js)
+// ============================================================
+// MEMORY FUNCTIONS
+// ============================================================
+
+async function saveToMemory(text, source) {
+  const stored = await chrome.storage.local.get(['soul_memory']);
+  const existing = stored.soul_memory || '';
+  const date = new Date().toISOString().slice(0, 10);
+  const entry = '\n\n[' + date + (source ? ' | ' + source.slice(0, 60) : '') + ']\n' + text.slice(0, 800);
+  const updated = existing + entry;
+  await chrome.storage.local.set({ soul_memory: updated });
+}
+
+async function saveToSessionMemory(text, source) {
+  const s = await chrome.storage.local.get([SESSION_KEY, CURRENT_KEY]);
+  const sessions = s[SESSION_KEY] || {};
+  const currentId = s[CURRENT_KEY];
+  
+  if (!currentId || !sessions[currentId]) return;
+  
+  const date = new Date().toISOString().slice(0, 10);
+  const entry = '[' + date + (source ? ' | ' + source.slice(0, 40) : '') + '] ' + text.slice(0, 500) + '\n';
+  
+  sessions[currentId].sessionMemory = (sessions[currentId].sessionMemory || '') + entry;
+  await chrome.storage.local.set({ [SESSION_KEY]: sessions });
+}
+
+// ============================================================
+// MARKDOWN + UI HELPERS
+// ============================================================
+
 function renderMarkdown(raw) {
   let s = raw.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   s = s.replace(/[*][*](.+?)[*][*]/g, '<strong>$1</strong>');
@@ -120,9 +152,38 @@ function appendMessage(role, content) {
   const el = document.createElement('div');
   el.className = 'ss-message ss-message--' + role;
   
-  // Use markdown rendering for assistant messages
   if (role === 'assistant') {
     el.innerHTML = renderMarkdown(content);
+    
+    // Add save buttons container
+    const saveBtns = document.createElement('div');
+    saveBtns.className = 'ss-save-btns';
+    
+    // Session memory button
+    const sessionBtn = document.createElement('button');
+    sessionBtn.className = 'ss-save-btn ss-save-btn--session';
+    sessionBtn.textContent = '💾 Session';
+    sessionBtn.title = 'Save to this session\'s memory';
+    sessionBtn.addEventListener('click', async function() {
+      await saveToSessionMemory(content, pageContext ? pageContext.url : '');
+      sessionBtn.textContent = '✓ Session';
+      sessionBtn.disabled = true;
+    });
+    
+    // Global memory button
+    const globalBtn = document.createElement('button');
+    globalBtn.className = 'ss-save-btn ss-save-btn--global';
+    globalBtn.textContent = '🌐 Global';
+    globalBtn.title = 'Save to global memory (Git-backed)';
+    globalBtn.addEventListener('click', async function() {
+      await saveToMemory(content, pageContext ? pageContext.url : '');
+      globalBtn.textContent = '✓ Global';
+      globalBtn.disabled = true;
+    });
+    
+    saveBtns.appendChild(sessionBtn);
+    saveBtns.appendChild(globalBtn);
+    el.appendChild(saveBtns);
   } else {
     el.textContent = content;
   }
