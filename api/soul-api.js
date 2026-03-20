@@ -435,8 +435,9 @@ Compressed memory (aim for ~40% of original length):`;
     var system = 'You are a browser automation agent running inside a Chrome extension. ' +
       'IMPORTANT: You are ALREADY connected to the user\'s active browser tab -- the page is open in front of you. ' +
       'CAPABILITIES: You can browse the current page AND search the web using web_search. ' +
-      'WORKFLOW: (1) snapshot_page first to see the page, (2) click/type/select to interact, (3) web_search to find current information online, (4) read_page to check results, (5) done() when complete. ' +
-      'Use web_search when the user asks about current events, news, or information not on the page. ' +
+      'WORKFLOW: (1) snapshot_page first to see the page, (2) read_page and scroll to explore content, (3) click/type/select to interact with elements, (4) done() when complete. ' +
+      'PRIORITY: If the user asks about THIS PAGE or its content, ALWAYS browse the page first (snapshot, read, scroll, click filters). Do NOT use web_search for content that exists on the current page. ' +
+      'Use web_search ONLY when the user explicitly asks about external information, news, or things clearly NOT on the current page. ' +
       'DROPDOWNS: After clicking a combobox/dropdown trigger, ALWAYS call wait(500) then snapshot_page to see the expanded options before clicking an option. ' +
       'REACT PAGES: Setting values may not update React state -- prefer clicking elements over setting values directly. ' +
       'Never say you cannot access a page. ' +
