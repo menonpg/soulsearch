@@ -13,19 +13,28 @@ export class SoulSearchAPI {
     this.apiKey   = config.apiKey   || '';
     // Memory context limit (chars) - newest memories are at top, truncate from end
     this.memoryLimit = config.memoryLimit || 8000;
+    // Ollama base URL (defaults to localhost)
+    this.ollamaUrl = config.ollamaUrl?.replace(/\/$/, '') || 'http://localhost:11434';
   }
 
   // -- Status ------------------------------------------------------------------
 
   ping() {
-    // Ready if an LLM key is configured - no network call needed
+    // Ready if an LLM key is configured (or using Ollama which doesn't need one)
+    if (this.provider === 'ollama') {
+      return fetch(`${this.ollamaUrl}/api/tags`, { signal: AbortSignal.timeout(3000) })
+        .then(r => r.ok)
+        .catch(() => false);
+    }
     return Promise.resolve(!!this.llmKey);
   }
 
   // -- Core ask -----------------------------------------------------------------
 
   async ask(query, pageContext = null, history = []) {
-    if (!this.llmKey) throw new Error('No LLM key set - open Settings and add your API key');
+    if (!this.llmKey && this.provider !== 'ollama') {
+      throw new Error('No LLM key set - open Settings and add your API key');
+    }
 
     // Build system prompt: soul - page context (primary) - memory (background)
     const cached = await chrome.storage.local.get(['soul_memory', 'soul_soul']);
@@ -61,6 +70,7 @@ export class SoulSearchAPI {
       case 'anthropic': return this._callAnthropic(systemPrompt, msgs);
       case 'openai':    return this._callOpenAI(systemPrompt, msgs);
       case 'gemini':    return this._callGemini(systemPrompt, msgs);
+      case 'ollama':    return this._callOllama(systemPrompt, msgs);
       default:          throw new Error(`Unknown provider: ${this.provider}`);
     }
   }
@@ -144,6 +154,48 @@ export class SoulSearchAPI {
     }
     const data = await r.json();
     return { answer: data.candidates[0].content.parts[0].text, memory_used: null };
+  }
+
+  // -- Ollama (local) -----------------------------------------------------------
+
+  async _callOllama(system, messages) {
+    const model = this.model || 'llama3.2';
+    
+    // Try OpenAI-compatible endpoint first
+    const r = await fetch(`${this.ollamaUrl}/v1/chat/completions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model,
+        messages: [{ role: 'system', content: system }, ...messages],
+        stream: false
+      }),
+      signal: AbortSignal.timeout(60000)
+    });
+
+    if (!r.ok) {
+      // Fallback to native Ollama API
+      const r2 = await fetch(`${this.ollamaUrl}/api/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model,
+          messages: [{ role: 'system', content: system }, ...messages],
+          stream: false
+        }),
+        signal: AbortSignal.timeout(60000)
+      });
+
+      if (!r2.ok) {
+        const err = await r2.json().catch(() => ({}));
+        throw new Error(`Ollama ${r2.status}: ${err.error || r2.statusText}. Is Ollama running?`);
+      }
+      const data = await r2.json();
+      return { answer: data.message?.content || data.response, memory_used: null };
+    }
+
+    const data = await r.json();
+    return { answer: data.choices[0].message.content, memory_used: null };
   }
 
   // -- Memory helpers ------------------------------------------------------------

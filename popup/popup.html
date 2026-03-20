@@ -92,13 +92,17 @@
             <option value="anthropic">Anthropic (Claude)</option>
             <option value="openai">OpenAI (GPT-4o)</option>
             <option value="gemini">Google Gemini</option>
+            <option value="ollama">Ollama (Local)</option>
           </select>
         </label>
-        <label>API Key
+        <label>API Key <span class="ss-optional" id="cfg-key-hint"></span>
           <input type="password" id="cfg-llm-key" placeholder="sk-ant-... or sk-..." />
         </label>
+        <label id="cfg-ollama-url-label" style="display:none">Ollama URL
+          <input type="text" id="cfg-ollama-url" placeholder="http://localhost:11434" />
+        </label>
         <label>Model
-          <input type="text" id="cfg-model" placeholder="e.g. claude-3-5-sonnet-20241022" />
+          <input type="text" id="cfg-model" placeholder="e.g. claude-3-5-sonnet-20241022 or llama3.2" />
         </label>
       </div>
 

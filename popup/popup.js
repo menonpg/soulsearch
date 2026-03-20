@@ -466,7 +466,7 @@ async function loadConfig() {
   const defaults = {
     provider: 'anthropic', llmKey: '', model: 'claude-3-haiku-20240307',
     soul: '', gitProvider: 'github', gitOwner: '', gitRepo: '',
-    gitBranch: 'main', gitToken: '',
+    gitBranch: 'main', gitToken: '', ollamaUrl: 'http://localhost:11434',
   };
   try {
     const local = await chrome.storage.local.get(defaults);
@@ -481,18 +481,29 @@ async function loadConfig() {
   } catch(e) { return defaults; }
 }
 
+function updateProviderUI(provider) {
+  const isOllama = provider === 'ollama';
+  const urlLabel = $('cfg-ollama-url-label');
+  const keyHint = $('cfg-key-hint');
+  if (urlLabel) urlLabel.style.display = isOllama ? 'block' : 'none';
+  if (keyHint) keyHint.textContent = isOllama ? '(not needed for Ollama)' : '';
+}
+
 async function showSettings() {
   const config = await loadConfig();
   $('cfg-provider').value     = config.provider;
   $('cfg-llm-key').value      = config.llmKey;
   $('cfg-model').value        = config.model;
+  $('cfg-ollama-url').value   = config.ollamaUrl || 'http://localhost:11434';
   $('cfg-git-provider').value = config.gitProvider;
   $('cfg-git-owner').value    = config.gitOwner;
   $('cfg-git-repo').value     = config.gitRepo;
   $('cfg-git-branch').value   = config.gitBranch || 'main';
   $('cfg-git-token').value    = config.gitToken;
   $('cfg-soul').value         = config.soul;
+  updateProviderUI(config.provider);
   $('ss-settings').style.display = 'block';
+  $('cfg-provider').onchange = function() { updateProviderUI(this.value); };
 }
 
 async function saveSettings() {
@@ -501,11 +512,14 @@ async function saveSettings() {
   const gitBranch = $('cfg-git-branch').value.trim() || 'main';
   const gitToken = $('cfg-git-token').value.trim();
   const gitProvider = $('cfg-git-provider').value;
+  const provider = $('cfg-provider').value;
+  const ollamaUrl = $('cfg-ollama-url').value.trim() || 'http://localhost:11434';
 
   await chrome.storage.local.set({
-    provider: $('cfg-provider').value, llmKey: $('cfg-llm-key').value.trim(),
-    model: $('cfg-model').value.trim() || 'claude-3-haiku-20240307',
+    provider, llmKey: $('cfg-llm-key').value.trim(),
+    model: $('cfg-model').value.trim() || (provider === 'ollama' ? 'llama3.2' : 'claude-3-haiku-20240307'),
     soul: $('cfg-soul').value.trim(),
+    ollamaUrl,
     gitProvider, gitOwner, gitRepo, gitBranch, gitToken,
   });
 
