@@ -2,7 +2,7 @@
 // Calls LLM providers directly (Anthropic / OpenAI / Gemini).
 // No middleware or proxy required - your API key stays on your device.
 
-import { braveSearch, hasSearchIntent, extractSearchQuery } from './brave-search.js';
+import { braveSearch } from './brave-search.js';
 
 export class SoulSearchAPI {
   constructor(config) {
@@ -55,23 +55,9 @@ export class SoulSearchAPI {
 
     let systemParts = [soulIdentity];
 
-    // Check for search intent and perform Brave search if enabled
-    let searchResults = null;
-    if (this.braveApiKey && hasSearchIntent(query)) {
-      try {
-        const searchQuery = extractSearchQuery(query);
-        searchResults = await braveSearch(searchQuery, this.braveApiKey, 5);
-      } catch (e) {
-        console.warn('Brave search failed:', e.message);
-      }
-    }
-
-    // Include search results in context
-    if (searchResults && searchResults.length > 0) {
-      const searchContext = searchResults.map((r, i) => 
-        `[${i + 1}] ${r.title}\n    ${r.url}\n    ${r.snippet}`
-      ).join('\n\n');
-      systemParts.push(`\n\n--- Web Search Results (use these to answer the user's query) ---\n${searchContext}`);
+    // Note: Web search is available in Agent Mode as a tool the model can call
+    if (this.braveApiKey) {
+      systemParts.push('\n(Note: For web searches, enable Agent Mode which has web_search as a tool.)');
     }
 
     // Page context comes FIRST - if the user asks about the page, this is the source of truth
@@ -423,6 +409,20 @@ Compressed memory (aim for ~40% of original length):`;
           properties: { summary: { type: 'string', description: 'What was accomplished' } },
           required: ['summary']
         }
+      },
+      {
+        name: 'web_search',
+        description: 'Search the web using Brave Search API. Use this when you need current information, news, or to look up something not on the current page.',
+        input_schema: {
+          type: 'object',
+          properties: {
+            query: {
+              type: 'string',
+              description: 'The search query'
+            }
+          },
+          required: ['query']
+        }
       }
     ];
 
@@ -430,7 +430,9 @@ Compressed memory (aim for ~40% of original length):`;
     var identity = cached.soul_soul || this.soul || 'You are SoulSearch, a browser automation agent.';
     var system = 'You are a browser automation agent running inside a Chrome extension. ' +
       'IMPORTANT: You are ALREADY connected to the user\'s active browser tab -- the page is open in front of you. ' +
-      'WORKFLOW: (1) snapshot_page first, (2) click/type/select to interact, (3) after clicking any dropdown or button use wait(500) then snapshot_page again to see new elements, (4) read_page to check results, (5) done() when complete. ' +
+      'CAPABILITIES: You can browse the current page AND search the web using web_search. ' +
+      'WORKFLOW: (1) snapshot_page first to see the page, (2) click/type/select to interact, (3) web_search to find current information online, (4) read_page to check results, (5) done() when complete. ' +
+      'Use web_search when the user asks about current events, news, or information not on the page. ' +
       'DROPDOWNS: After clicking a combobox/dropdown trigger, ALWAYS call wait(500) then snapshot_page to see the expanded options before clicking an option. ' +
       'REACT PAGES: Setting values may not update React state -- prefer clicking elements over setting values directly. ' +
       'Never say you cannot access a page. ' +
@@ -569,6 +571,26 @@ Compressed memory (aim for ~40% of original length):`;
             var waitMs = Math.min(Math.max(input.ms || 500, 100), 2000);
             await new Promise(function(r) { setTimeout(r, waitMs); });
             result = 'Waited ' + waitMs + 'ms';
+          } else if (toolName === 'web_search') {
+            if (!this.braveApiKey) {
+              result = 'Error: Brave Search not configured. Add API key in Settings.';
+            } else {
+              try {
+                var searchQuery = input.query || '';
+                var searchResults = await braveSearch(searchQuery, this.braveApiKey, 5);
+                if (searchResults.length === 0) {
+                  result = 'No search results found for: ' + searchQuery;
+                } else {
+                  result = 'Search results for "' + searchQuery + '":\n\n' + 
+                    searchResults.map(function(r, i) {
+                      return (i+1) + '. ' + r.title + '\n   ' + r.url + '\n   ' + r.snippet;
+                    }).join('\n\n');
+                }
+                if (onStep) onStep({ type: 'thought', text: '[web_search] Found ' + searchResults.length + ' results for: ' + searchQuery });
+              } catch (e) {
+                result = 'Search error: ' + e.message;
+              }
+            }
           } else {
             result = 'Unknown tool: ' + toolName;
           }
