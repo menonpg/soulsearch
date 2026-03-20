@@ -612,7 +612,7 @@ Compressed memory (aim for ~40% of original length):`;
       }
 
       // Format tool results based on provider
-      if (this.provider === 'ollama') {
+      if (effectiveAgentProvider === 'ollama') {
         // Ollama expects separate tool messages
         for (var j = 0; j < toolResults.length; j++) {
           messages.push({
