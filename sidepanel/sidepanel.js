@@ -7,6 +7,7 @@ const CURRENT_KEY = 'ss_current';
 let api = null;
 let chatHistory = [];
 let pageContext = null;
+let currentSessionId = null;
 
 async function init() {
   try {
@@ -22,6 +23,9 @@ async function init() {
       pageContext = ctx;
       $('ss-page-title').textContent = ctx.title || ctx.url || '--';
     }
+    
+    // Load existing session history
+    await loadSessionHistory();
   } catch (e) {
     console.error('SoulSearch sidepanel init error:', e);
     setStatus('error', 'Error: ' + e.message);
@@ -38,6 +42,38 @@ async function loadConfig() {
   return Object.assign({}, defaults, local);
 }
 
+// Load session history from shared storage
+async function loadSessionHistory() {
+  const s = await chrome.storage.local.get([SESSION_KEY, CURRENT_KEY]);
+  const sessions = s[SESSION_KEY] || {};
+  currentSessionId = s[CURRENT_KEY];
+  
+  if (currentSessionId && sessions[currentSessionId]) {
+    const session = sessions[currentSessionId];
+    chatHistory = (session.history || []).slice(-40);
+    
+    // Display existing history
+    chatHistory.forEach(m => {
+      if (m.role === 'user' || m.role === 'assistant') {
+        appendMessage(m.role, m.content, true); // true = skip saving
+      }
+    });
+  }
+}
+
+// Save chat history to shared session storage
+async function saveSessionHistory() {
+  if (!currentSessionId) return;
+  
+  const s = await chrome.storage.local.get([SESSION_KEY]);
+  const sessions = s[SESSION_KEY] || {};
+  
+  if (sessions[currentSessionId]) {
+    sessions[currentSessionId].history = chatHistory.slice(-40);
+    await chrome.storage.local.set({ [SESSION_KEY]: sessions });
+  }
+}
+
 $('ss-send-btn').addEventListener('click', runAgent);
 $('ss-input').addEventListener('keydown', function(e) {
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); runAgent(); }
@@ -50,6 +86,7 @@ async function runAgent() {
   input.value = '';
   appendMessage('user', task);
   chatHistory.push({ role: 'user', content: task });
+  await saveSessionHistory(); // Save immediately
 
   appendMessage('system', '[Agent] Starting...');
   
@@ -68,6 +105,7 @@ async function runAgent() {
     });
     appendMessage('assistant', result);
     chatHistory.push({ role: 'assistant', content: result });
+    await saveSessionHistory(); // Save after response
   } catch(err) {
     appendMessage('assistant', '⚠️ Agent error: ' + err.message);
   }
@@ -107,14 +145,14 @@ async function saveToMemory(text, source) {
 async function saveToSessionMemory(text, source) {
   const s = await chrome.storage.local.get([SESSION_KEY, CURRENT_KEY]);
   const sessions = s[SESSION_KEY] || {};
-  const currentId = s[CURRENT_KEY];
+  const sessionId = s[CURRENT_KEY];
   
-  if (!currentId || !sessions[currentId]) return;
+  if (!sessionId || !sessions[sessionId]) return;
   
   const date = new Date().toISOString().slice(0, 10);
   const entry = '[' + date + (source ? ' | ' + source.slice(0, 40) : '') + '] ' + text.slice(0, 500) + '\n';
   
-  sessions[currentId].sessionMemory = (sessions[currentId].sessionMemory || '') + entry;
+  sessions[sessionId].sessionMemory = (sessions[sessionId].sessionMemory || '') + entry;
   await chrome.storage.local.set({ [SESSION_KEY]: sessions });
 }
 
@@ -147,7 +185,7 @@ function renderMarkdown(raw) {
   return s;
 }
 
-function appendMessage(role, content) {
+function appendMessage(role, content, skipSave = false) {
   const chat = $('ss-chat');
   const el = document.createElement('div');
   el.className = 'ss-message ss-message--' + role;
