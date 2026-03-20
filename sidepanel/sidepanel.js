@@ -89,11 +89,44 @@ async function getPageText() {
   } catch(e) { return null; }
 }
 
+// Markdown renderer (same as popup.js)
+function renderMarkdown(raw) {
+  let s = raw.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  s = s.replace(/[*][*](.+?)[*][*]/g, '<strong>$1</strong>');
+  s = s.replace(/[*](.+?)[*]/g, '<em>$1</em>');
+  s = s.replace(/^[#]{3} (.+)$/gm, '<h4 style="margin:6px 0 2px;color:#a78bfa">$1</h4>');
+  s = s.replace(/^[#]{2} (.+)$/gm, '<h3 style="margin:8px 0 3px;color:#818cf8">$1</h3>');
+  s = s.replace(/^[#] (.+)$/gm,    '<h3 style="margin:8px 0 3px;color:#818cf8">$1</h3>');
+  s = s.replace(/^[-*] (.+)$/gm, '<li>$1</li>');
+  s = s.replace(/^[0-9]+[.] (.+)$/gm, '<li>$1</li>');
+  const LF = String.fromCharCode(10);
+  const sections = s.split(LF + LF);
+  s = sections.map(function(sec) {
+    const trimmed = sec.trim();
+    if (trimmed.indexOf('<li>') === 0) {
+      return '<ul style="margin:4px 0;padding-left:18px">' + trimmed.split(LF).join('') + '</ul>';
+    }
+    return sec;
+  }).join('<br><br>');
+  s = s.split(LF).join('<br>');
+  s = s.replace(/<br>(<[/]?(ul|ol|h3|h4))/g, '<$2');
+  s = s.replace(/(<[/](ul|ol|h3|h4)>)<br>/g, '</$2>');
+  s = s.replace(/(<br>){3,}/g, '<br><br>');
+  return s;
+}
+
 function appendMessage(role, content) {
   const chat = $('ss-chat');
   const el = document.createElement('div');
   el.className = 'ss-message ss-message--' + role;
-  el.textContent = content;
+  
+  // Use markdown rendering for assistant messages
+  if (role === 'assistant') {
+    el.innerHTML = renderMarkdown(content);
+  } else {
+    el.textContent = content;
+  }
+  
   chat.appendChild(el);
   chat.scrollTop = chat.scrollHeight;
 }
