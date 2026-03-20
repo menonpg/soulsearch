@@ -10,6 +10,7 @@ export class SoulSearchAPI {
     this.llmKey   = config.llmKey   || '';
     this.soul     = config.soul     || 'I am a research assistant with persistent memory. I help you understand and research web content.';
     this.model    = config.model    || 'claude-3-haiku-20240307';
+    this.agentModel = config.agentModel || '';
     // SoulMate API optional - only used if explicitly configured with a key
     this.apiUrl   = config.apiUrl?.replace(/\/$/, '') || '';
     this.apiKey   = config.apiKey   || '';
@@ -439,8 +440,10 @@ Compressed memory (aim for ~40% of original length):`;
     var messages = [{ role: 'user', content: task }];
     var maxSteps = 12;
 
-    if (onStep) onStep({ type: 'thought', text: '[SoulSearch Agent] starting -- provider: ' + this.provider + ', model: ' + this.model });
-    console.log('[SoulSearch Agent] starting, provider:', this.provider, ', model:', this.model, ', key length:', this.llmKey ? this.llmKey.length : 0);
+    // Use agentModel if set, otherwise fall back to chat model
+    var agentModelToUse = this.agentModel || this.model;
+    if (onStep) onStep({ type: 'thought', text: '[SoulSearch Agent] starting -- provider: ' + this.provider + ', model: ' + agentModelToUse });
+    console.log('[SoulSearch Agent] starting, provider:', this.provider, ', model:', agentModelToUse, ', key length:', this.llmKey ? this.llmKey.length : 0);
 
     for (var step = 0; step < maxSteps; step++) {
       var tc = (step === 0) ? { type: 'tool', name: 'snapshot_page' } : { type: 'auto' };
@@ -706,7 +709,7 @@ Compressed memory (aim for ~40% of original length):`;
       }
     }
 
-    var model = this.model || 'llama3.2';
+    var model = this.agentModel || this.model || 'llama3.2';
     var resp = await fetch(this.ollamaUrl + '/api/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -721,6 +724,10 @@ Compressed memory (aim for ~40% of original length):`;
 
     if (!resp.ok) {
       var errText = await resp.text().catch(function() { return resp.statusText; });
+      // Check for tool support error
+      if (errText.includes('does not support tools')) {
+        throw new Error('Model "' + model + '" doesn\'t support tools. Set a tool-capable Agent Model in Settings (e.g., llama3.2, qwen2.5)');
+      }
       throw new Error('Ollama ' + resp.status + ': ' + errText);
     }
     var data = await resp.json();
