@@ -11,6 +11,8 @@ export class SoulSearchAPI {
     // SoulMate API optional - only used if explicitly configured with a key
     this.apiUrl   = config.apiUrl?.replace(/\/$/, '') || '';
     this.apiKey   = config.apiKey   || '';
+    // Memory context limit (chars) - newest memories are at top, truncate from end
+    this.memoryLimit = config.memoryLimit || 8000;
   }
 
   // -- Status ------------------------------------------------------------------
@@ -40,11 +42,11 @@ export class SoulSearchAPI {
       systemParts.push(`\n\n--- Current Page (answer questions about this page from here) ---\n${pageContext}`);
     }
 
-    // Memory is background context - useful for personalisation, not primary source
-    // Use slice(-6000) to prioritize NEWEST memories when truncating
+    // Memory is background context - newest memories are at the top (prepended)
+    // Truncate from end to stay within limit while preserving recent context
     if (cached.soul_memory) {
-      const recentMemory = cached.soul_memory.slice(-6000);
-      systemParts.push(`\n\n--- Your Background Memory (use as context, not as the primary answer unless directly relevant) ---\n${recentMemory}`);
+      const mem = cached.soul_memory.slice(0, this.memoryLimit);
+      systemParts.push(`\n\n--- Your Background Memory (use as context, not as the primary answer unless directly relevant) ---\n${mem}`);
     }
 
     const systemPrompt = systemParts.join('');
@@ -149,8 +151,9 @@ export class SoulSearchAPI {
   async remember(text, source = '') {
     const stored = await chrome.storage.local.get(['soul_memory']);
     const existing = stored.soul_memory || '';
-    const entry = `\n[${new Date().toISOString().slice(0,10)}] ${source ? `(${source}) ` : ''}${text}`;
-    await chrome.storage.local.set({ soul_memory: existing + entry });
+    // Prepend new memories — newest first, so natural truncation keeps recent
+    const entry = `[${new Date().toISOString().slice(0,10)}] ${source ? `(${source}) ` : ''}${text}\n`;
+    await chrome.storage.local.set({ soul_memory: entry + existing });
     return { ok: true };
   }
 
