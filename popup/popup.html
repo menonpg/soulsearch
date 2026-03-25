@@ -92,11 +92,35 @@
             <option value="anthropic">Anthropic (Claude)</option>
             <option value="openai">OpenAI (GPT-4o)</option>
             <option value="gemini">Google Gemini</option>
+            <option value="databricks">Databricks</option>
+            <option value="copilot">GitHub Copilot</option>
           </select>
         </label>
-        <label>API Key
+
+        <!-- Standard API key (hidden for copilot) -->
+        <label id="cfg-llm-key-row">API Key
           <input type="password" id="cfg-llm-key" placeholder="sk-ant-... or sk-..." />
         </label>
+
+        <!-- Databricks workspace URL (only shown for databricks) -->
+        <label id="cfg-databricks-url-row" style="display:none">Databricks Workspace URL
+          <input type="text" id="cfg-databricks-url" placeholder="https://dbc-XXXX.cloud.databricks.com/serving-endpoints" />
+        </label>
+
+        <!-- GitHub Copilot OAuth (only shown for copilot) -->
+        <div id="cfg-copilot-auth-row" style="display:none">
+          <div id="cfg-copilot-status" class="ss-copilot-status ss-copilot-status--disconnected">Not connected</div>
+          <div id="cfg-copilot-device" style="display:none" class="ss-copilot-device">
+            <p>Open <a id="cfg-copilot-link" href="https://github.com/login/device" target="_blank">github.com/login/device</a> and enter:</p>
+            <div class="ss-copilot-code" id="cfg-copilot-code">—</div>
+            <div class="ss-copilot-waiting">Waiting for approval…</div>
+          </div>
+          <div class="ss-copilot-actions">
+            <button class="ss-btn ss-btn--small" id="cfg-copilot-connect">🔗 Connect GitHub Copilot</button>
+            <button class="ss-btn ss-btn--small ss-btn--danger" id="cfg-copilot-disconnect" style="display:none">Disconnect</button>
+          </div>
+        </div>
+
         <label>Model
           <input type="text" id="cfg-model" placeholder="e.g. claude-3-5-sonnet-20241022" />
         </label>

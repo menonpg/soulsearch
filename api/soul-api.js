@@ -1,6 +1,12 @@
 // SoulSearch API layer
-// Calls LLM providers directly (Anthropic / OpenAI / Gemini).
+// Calls LLM providers directly (Anthropic / OpenAI / Gemini / Databricks / GitHub Copilot).
 // No middleware or proxy required - your API key stays on your device.
+
+// GitHub Copilot OAuth constants
+const COPILOT_CLIENT_ID = 'Iv1.b507a08c87ecfe98'; // GitHub's public client ID for Copilot
+const COPILOT_DEVICE_URL = 'https://github.com/login/device/code';
+const COPILOT_TOKEN_URL  = 'https://github.com/login/oauth/access_token';
+const COPILOT_API_URL    = 'https://api.githubcopilot.com/chat/completions';
 
 export class SoulSearchAPI {
   constructor(config) {
@@ -11,6 +17,8 @@ export class SoulSearchAPI {
     // SoulMate API optional - only used if explicitly configured with a key
     this.apiUrl   = config.apiUrl?.replace(/\/$/, '') || '';
     this.apiKey   = config.apiKey   || '';
+    // Databricks config
+    this.databricksUrl = config.databricksUrl || '';
     // Memory context limit (chars) - newest memories are at top, truncate from end
     this.memoryLimit = config.memoryLimit || 8000;
   }
@@ -58,10 +66,12 @@ export class SoulSearchAPI {
     ];
 
     switch (this.provider) {
-      case 'anthropic': return this._callAnthropic(systemPrompt, msgs);
-      case 'openai':    return this._callOpenAI(systemPrompt, msgs);
-      case 'gemini':    return this._callGemini(systemPrompt, msgs);
-      default:          throw new Error(`Unknown provider: ${this.provider}`);
+      case 'anthropic':   return this._callAnthropic(systemPrompt, msgs);
+      case 'openai':      return this._callOpenAI(systemPrompt, msgs);
+      case 'gemini':      return this._callGemini(systemPrompt, msgs);
+      case 'databricks':  return this._callDatabricks(systemPrompt, msgs);
+      case 'copilot':     return this._callCopilot(systemPrompt, msgs);
+      default:            throw new Error(`Unknown provider: ${this.provider}`);
     }
   }
 
@@ -103,7 +113,7 @@ export class SoulSearchAPI {
         'Authorization': `Bearer ${this.llmKey}`
       },
       body: JSON.stringify({
-        model: 'gpt-4o-mini',
+        model: this.model || 'gpt-4o-mini',
         messages: [{ role: 'system', content: system }, ...messages]
       }),
       signal: AbortSignal.timeout(30000)
@@ -144,6 +154,177 @@ export class SoulSearchAPI {
     }
     const data = await r.json();
     return { answer: data.candidates[0].content.parts[0].text, memory_used: null };
+  }
+
+  // -- Databricks (OpenAI-compatible) ------------------------------------------
+  // Base URL: https://dbc-XXXX.cloud.databricks.com/serving-endpoints
+  // Model:    databricks-claude-opus-4-6, databricks-dbrx-instruct, etc.
+
+  async _callDatabricks(system, messages) {
+    if (!this.databricksUrl) throw new Error('Databricks URL not set - open Settings and add your workspace URL');
+    const baseUrl = this.databricksUrl.replace(/\/$/, '');
+    const r = await fetch(`${baseUrl}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${this.llmKey}`
+      },
+      body: JSON.stringify({
+        model: this.model || 'databricks-dbrx-instruct',
+        messages: [{ role: 'system', content: system }, ...messages],
+        max_tokens: 1024
+      }),
+      signal: AbortSignal.timeout(60000)
+    });
+
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({}));
+      throw new Error(`Databricks ${r.status}: ${err.message || err.error?.message || r.statusText}`);
+    }
+    const data = await r.json();
+    return { answer: data.choices[0].message.content, memory_used: null };
+  }
+
+  // -- GitHub Copilot ----------------------------------------------------------
+  // Uses OAuth token stored via copilotAuth flow below.
+
+  async _callCopilot(system, messages) {
+    // Get a fresh Copilot API token (exchanged from the OAuth token)
+    const token = await this._getCopilotApiToken();
+
+    const r = await fetch(COPILOT_API_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+        'Editor-Version': 'SoulSearch/0.1.0',
+        'Editor-Plugin-Version': 'SoulSearch/0.1.0',
+        'Copilot-Integration-Id': 'vscode-chat'
+      },
+      body: JSON.stringify({
+        model: this.model || 'gpt-4o',
+        messages: [{ role: 'system', content: system }, ...messages],
+        max_tokens: 1024,
+        stream: false
+      }),
+      signal: AbortSignal.timeout(30000)
+    });
+
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({}));
+      // Token may have expired - clear it so next call re-auths
+      if (r.status === 401) {
+        await chrome.storage.local.remove(['copilot_api_token', 'copilot_api_token_expiry']);
+        throw new Error('GitHub Copilot token expired - please reconnect in Settings');
+      }
+      throw new Error(`Copilot ${r.status}: ${err.message || r.statusText}`);
+    }
+    const data = await r.json();
+    return { answer: data.choices[0].message.content, memory_used: null };
+  }
+
+  // Get (or refresh) the short-lived Copilot API token from the stored OAuth token
+  async _getCopilotApiToken() {
+    const stored = await chrome.storage.local.get(['copilot_api_token', 'copilot_api_token_expiry', 'copilot_oauth_token']);
+
+    // Reuse cached API token if still valid (5min buffer)
+    if (stored.copilot_api_token && stored.copilot_api_token_expiry > Date.now() + 300000) {
+      return stored.copilot_api_token;
+    }
+
+    if (!stored.copilot_oauth_token) {
+      throw new Error('GitHub Copilot not connected - open Settings and click "Connect GitHub Copilot"');
+    }
+
+    // Exchange OAuth token for short-lived Copilot API token
+    const r = await fetch('https://api.github.com/copilot_internal/v2/token', {
+      headers: {
+        'Authorization': `token ${stored.copilot_oauth_token}`,
+        'Accept': 'application/json'
+      }
+    });
+
+    if (!r.ok) {
+      await chrome.storage.local.remove(['copilot_oauth_token', 'copilot_api_token', 'copilot_api_token_expiry']);
+      throw new Error('GitHub Copilot auth failed - please reconnect in Settings');
+    }
+
+    const data = await r.json();
+    await chrome.storage.local.set({
+      copilot_api_token: data.token,
+      copilot_api_token_expiry: data.expires_at * 1000 // convert to ms
+    });
+    return data.token;
+  }
+
+  // -- GitHub Copilot OAuth Device Flow ----------------------------------------
+  // Call this to initiate auth. Returns { user_code, verification_uri, interval, device_code }
+  // Then poll copilotAuthPoll(device_code, interval) until it resolves.
+
+  static async copilotAuthStart() {
+    const r = await fetch(COPILOT_DEVICE_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Accept': 'application/json'
+      },
+      body: `client_id=${COPILOT_CLIENT_ID}&scope=copilot`
+    });
+
+    if (!r.ok) throw new Error(`GitHub device auth failed: ${r.status}`);
+    const data = await r.json();
+    if (data.error) throw new Error(`GitHub: ${data.error_description || data.error}`);
+
+    return {
+      user_code:        data.user_code,
+      verification_uri: data.verification_uri,
+      device_code:      data.device_code,
+      interval:         data.interval || 5,
+      expires_in:       data.expires_in || 900
+    };
+  }
+
+  // Poll for the OAuth token after user approves on GitHub.
+  // Resolves with true on success, throws on error/expiry.
+  static async copilotAuthPoll(deviceCode, intervalSec = 5) {
+    const deadline = Date.now() + 900000; // 15 min max
+    while (Date.now() < deadline) {
+      await new Promise(r => setTimeout(r, intervalSec * 1000));
+
+      const r = await fetch(COPILOT_TOKEN_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'Accept': 'application/json'
+        },
+        body: `client_id=${COPILOT_CLIENT_ID}&device_code=${deviceCode}&grant_type=urn:ietf:params:oauth:grant-type:device_code`
+      });
+
+      const data = await r.json();
+
+      if (data.access_token) {
+        await chrome.storage.local.set({
+          copilot_oauth_token: data.access_token,
+          copilot_oauth_scope: data.scope || ''
+        });
+        return true;
+      }
+
+      if (data.error === 'authorization_pending') continue;
+      if (data.error === 'slow_down') {
+        intervalSec = Math.min(intervalSec + 5, 30);
+        continue;
+      }
+      if (data.error === 'expired_token') throw new Error('Device code expired - please try again');
+      if (data.error === 'access_denied') throw new Error('GitHub Copilot access denied');
+      throw new Error(`Auth error: ${data.error_description || data.error}`);
+    }
+    throw new Error('Auth timed out - please try again');
+  }
+
+  // Disconnect Copilot - clear all stored tokens
+  static async copilotDisconnect() {
+    await chrome.storage.local.remove(['copilot_oauth_token', 'copilot_api_token', 'copilot_api_token_expiry', 'copilot_oauth_scope']);
   }
 
   // -- Memory helpers ------------------------------------------------------------

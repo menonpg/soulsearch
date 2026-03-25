@@ -466,7 +466,7 @@ async function loadConfig() {
   const defaults = {
     provider: 'anthropic', llmKey: '', model: 'claude-3-haiku-20240307',
     soul: '', gitProvider: 'github', gitOwner: '', gitRepo: '',
-    gitBranch: 'main', gitToken: '',
+    gitBranch: 'main', gitToken: '', databricksUrl: '',
   };
   try {
     const local = await chrome.storage.local.get(defaults);
@@ -481,17 +481,94 @@ async function loadConfig() {
   } catch(e) { return defaults; }
 }
 
+function updateProviderUI(provider) {
+  const isDatabricks = provider === 'databricks';
+  const isCopilot    = provider === 'copilot';
+  $('cfg-llm-key-row').style.display         = isCopilot    ? 'none'  : 'block';
+  $('cfg-databricks-url-row').style.display  = isDatabricks ? 'block' : 'none';
+  $('cfg-copilot-auth-row').style.display    = isCopilot    ? 'block' : 'none';
+  if (isCopilot) refreshCopilotStatus();
+}
+
+async function refreshCopilotStatus() {
+  const stored = await chrome.storage.local.get(['copilot_oauth_token']);
+  const statusEl = $('cfg-copilot-status');
+  const connectBtn = $('cfg-copilot-connect');
+  const disconnectBtn = $('cfg-copilot-disconnect');
+  if (stored.copilot_oauth_token) {
+    statusEl.textContent = '✅ Connected to GitHub Copilot';
+    statusEl.className = 'ss-copilot-status ss-copilot-status--connected';
+    connectBtn.style.display = 'none';
+    disconnectBtn.style.display = 'inline-block';
+    $('cfg-copilot-device').style.display = 'none';
+  } else {
+    statusEl.textContent = 'Not connected';
+    statusEl.className = 'ss-copilot-status ss-copilot-status--disconnected';
+    connectBtn.style.display = 'inline-block';
+    disconnectBtn.style.display = 'none';
+  }
+}
+
+async function startCopilotAuth() {
+  const statusEl   = $('cfg-copilot-status');
+  const deviceDiv  = $('cfg-copilot-device');
+  const connectBtn = $('cfg-copilot-connect');
+  const codeEl     = $('cfg-copilot-code');
+  const linkEl     = $('cfg-copilot-link');
+
+  connectBtn.disabled = true;
+  statusEl.textContent = '⏳ Starting auth…';
+  statusEl.className = 'ss-copilot-status ss-copilot-status--pending';
+
+  try {
+    const { SoulSearchAPI } = await import('../api/soul-api.js');
+    const auth = await SoulSearchAPI.copilotAuthStart();
+
+    codeEl.textContent = auth.user_code;
+    linkEl.href = auth.verification_uri;
+    deviceDiv.style.display = 'block';
+    statusEl.textContent = '⏳ Waiting for GitHub approval…';
+
+    // Open the verification URL automatically
+    chrome.tabs.create({ url: auth.verification_uri });
+
+    // Poll for completion
+    await SoulSearchAPI.copilotAuthPoll(auth.device_code, auth.interval);
+
+    deviceDiv.style.display = 'none';
+    await refreshCopilotStatus();
+  } catch(e) {
+    statusEl.textContent = '❌ ' + e.message;
+    statusEl.className = 'ss-copilot-status ss-copilot-status--disconnected';
+    deviceDiv.style.display = 'none';
+    connectBtn.disabled = false;
+  }
+}
+
 async function showSettings() {
   const config = await loadConfig();
   $('cfg-provider').value     = config.provider;
   $('cfg-llm-key').value      = config.llmKey;
   $('cfg-model').value        = config.model;
+  $('cfg-databricks-url').value = config.databricksUrl || '';
   $('cfg-git-provider').value = config.gitProvider;
   $('cfg-git-owner').value    = config.gitOwner;
   $('cfg-git-repo').value     = config.gitRepo;
   $('cfg-git-branch').value   = config.gitBranch || 'main';
   $('cfg-git-token').value    = config.gitToken;
   $('cfg-soul').value         = config.soul;
+
+  updateProviderUI(config.provider);
+  $('cfg-provider').onchange = function() { updateProviderUI(this.value); };
+
+  // Copilot connect/disconnect handlers
+  $('cfg-copilot-connect').onclick = startCopilotAuth;
+  $('cfg-copilot-disconnect').onclick = async function() {
+    const { SoulSearchAPI } = await import('../api/soul-api.js');
+    await SoulSearchAPI.copilotDisconnect();
+    await refreshCopilotStatus();
+  };
+
   $('ss-settings').style.display = 'block';
 }
 
@@ -507,6 +584,7 @@ async function saveSettings() {
     model: $('cfg-model').value.trim() || 'claude-3-haiku-20240307',
     soul: $('cfg-soul').value.trim(),
     gitProvider, gitOwner, gitRepo, gitBranch, gitToken,
+    databricksUrl: $('cfg-databricks-url').value.trim(),
   });
 
   if (gitOwner && gitRepo && gitToken) {

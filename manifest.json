@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "SoulSearch",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "AI research assistant with persistent memory, powered by soul.py",
   "permissions": [
     "activeTab",
@@ -9,6 +9,15 @@
     "contextMenus",
     "scripting",
     "sidePanel"
+  ],
+  "host_permissions": [
+    "https://api.anthropic.com/*",
+    "https://api.openai.com/*",
+    "https://generativelanguage.googleapis.com/*",
+    "https://*.cloud.databricks.com/*",
+    "https://api.githubcopilot.com/*",
+    "https://github.com/login/*",
+    "https://api.github.com/*"
   ],
   "background": {
     "service_worker": "background/service-worker.js",

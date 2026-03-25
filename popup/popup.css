@@ -312,3 +312,36 @@ body {
 .ss-ver-item:hover { border-color: #a78bfa; color: #fff; }
 .ss-ver-item .ss-ver-sha { color: #6b7280; font-family: monospace; font-size: 10px; }
 .ss-ver-item .ss-ver-date { color: #818cf8; float: right; }
+
+/* --- Databricks / Copilot provider UI --- */
+.ss-copilot-status {
+  font-size: 11px; padding: 4px 8px; border-radius: 4px;
+  margin-bottom: 8px; font-weight: 600;
+}
+.ss-copilot-status--connected { background: #14532d; color: #86efac; }
+.ss-copilot-status--disconnected { background: #3b1515; color: #fca5a5; }
+.ss-copilot-status--pending { background: #312e20; color: #fcd34d; }
+
+.ss-copilot-device {
+  background: #2d2b42; border-radius: 6px; padding: 10px;
+  margin-bottom: 8px; font-size: 11px; color: #c4b5fd;
+}
+.ss-copilot-device a { color: #a78bfa; }
+.ss-copilot-device p { margin: 0 0 6px; }
+
+.ss-copilot-code {
+  font-family: monospace; font-size: 18px; font-weight: 700;
+  color: #fff; letter-spacing: 3px; text-align: center;
+  padding: 8px; background: #1e1b2e; border-radius: 4px;
+  margin: 6px 0;
+}
+.ss-copilot-waiting {
+  text-align: center; font-size: 10px; color: #818cf8;
+  animation: ss-pulse 1.5s ease-in-out infinite;
+}
+@keyframes ss-pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+
+.ss-copilot-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.ss-btn--danger { background: #7f1d1d; color: #fca5a5; }
+.ss-btn--danger:hover { background: #991b1b; }
+.ss-btn--small { padding: 4px 10px; font-size: 11px; }
